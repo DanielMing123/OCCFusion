@@ -48,15 +48,6 @@ model = dict(
             max_num_points=-1,
             max_voxels=-1,
         )), 
-    # backbone=dict(
-    #     type='mmdet.ResNet',
-    #     depth=50,
-    #     num_stages=4,
-    #     out_indices=(1, 2, 3),
-    #     frozen_stages=1,
-    #     norm_cfg=dict(type='BN2d', requires_grad=True),
-    #     norm_eval=False,
-    #     style='pytorch'),
     backbone=dict(
         type='mmdet.ResNet',
         depth=101,
