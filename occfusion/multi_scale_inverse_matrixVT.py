@@ -349,12 +349,10 @@ class SingleScaleInverseMatrixVT(BaseModule):
         merged_xy_feat = self.xy_fusion(merged_xy_feat)
         
         # Apply ASPP on final 3D volume BEV slice
-        # identity = merged_xyz_feat.clone()
         merged_bev = self.bev_attn_layer(merged_xy_feat)
         merged_bev = self.aspp_xy(merged_bev)
         coeff = self.combine_coeff(merged_xyz_feat).sigmoid()
-        merged_xyz_feat += coeff * merged_bev.unsqueeze(-1)
-        # merged_xyz_feat += identity
+        merged_xyz_feat = merged_xyz_feat + coeff * merged_bev.unsqueeze(-1)
         
         return merged_xyz_feat
         

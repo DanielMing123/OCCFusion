@@ -1,8 +1,8 @@
 _base_ = ['_base_/default_runtime.py']
 custom_imports = dict(imports=['occfusion'], allow_failed_imports=False)
 
-# load_from = 'ckpt/r101_dcn_fcos3d_pretrain.pth'
-load_from = 'ckpt/resnet50-0676ba61.pth'
+load_from = 'ckpt/r101_dcn_fcos3d_pretrain.pth'
+# load_from = 'ckpt/resnet50-0676ba61.pth'
 
 dataset_type = 'NuScenesSegDataset'
 data_root = 'data/nuscenes'
