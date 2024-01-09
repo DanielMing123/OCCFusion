@@ -47,7 +47,7 @@ def to_tensor(
 
 @TRANSFORMS.register_module()
 class Custom3DPack(BaseTransform):
-    INPUTS_KEYS = ['points', 'img', 'occ_200', 'occ_3d']
+    INPUTS_KEYS = ['points', 'radars', 'img', 'occ_200', 'occ_3d']
     INSTANCEDATA_3D_KEYS = [
         'gt_bboxes_3d', 'gt_labels_3d', 'attr_labels', 'depths', 'centers_2d'
     ]

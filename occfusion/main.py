@@ -18,12 +18,14 @@ class OccFusion(Base3DSegmentor):
                  backbone,
                  neck,
                  view_transformer,
-                 svfe,
+                 svfe_lidar,
+                 svfe_radar,
                  occ_head):
         super().__init__(data_preprocessor=data_preprocessor)
         self.img_backbone = MODELS.build(backbone)
         self.img_neck = MODELS.build(neck)
-        self.svfe = MODELS.build(svfe)
+        self.svfe_lidar = MODELS.build(svfe_lidar)
+        self.svfe_radar = MODELS.build(svfe_radar)
         self.view_transformer = MODELS.build(view_transformer)
         self.occ_head = MODELS.build(occ_head)
         self.pts_grid_set = pts_grid_set
@@ -67,12 +69,11 @@ class OccFusion(Base3DSegmentor):
                             img_shape=torch.Tensor([900,1600])
                             )
             img_metas.append(img_meta)
-        sparse_voxel = batch_inputs['sparse_voxel_feats']
-        voxel_coords = batch_inputs['sparse_voxel_coords']
         
         img_feats = self.extract_feat(imgs)
-        lidar_xyz_feat = self.svfe(sparse_voxel, voxel_coords) # [B, C, X, Y, Z]
-        xyz_feat_lvl0,xyz_feat_lvl1,xyz_feat_lvl2,xyz_feat_lvl3 = self.view_transformer(img_feats, img_metas, lidar_xyz_feat) # [B, C, X, Y, Z]
+        # lidar_xyz_feat = self.svfe_lidar(batch_inputs['lidar_voxel_feats'], batch_inputs['lidar_voxel_coords']) # [B, C, X, Y, Z]
+        radar_xyz_feat = self.svfe_radar(batch_inputs['radar_voxel_feats'], batch_inputs['radar_voxel_coords'])
+        xyz_feat_lvl0,xyz_feat_lvl1,xyz_feat_lvl2,xyz_feat_lvl3 = self.view_transformer(img_feats, img_metas, radar_xyz_feat) # [B, C, X, Y, Z]
         return self.occ_head(xyz_feat_lvl0,xyz_feat_lvl1,xyz_feat_lvl2,xyz_feat_lvl3) # fused_xyz_feat
              
     def loss(self,batch_inputs, batch_data_samples):

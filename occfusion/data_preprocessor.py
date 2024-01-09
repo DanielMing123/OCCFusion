@@ -44,16 +44,16 @@ class OccFusionDataPreprocessor(Det3DDataPreprocessor):
                 voxel_dict = self.voxelize(inputs['points'], data_samples)
                 batch_inputs['voxels'] = voxel_dict
             
-            # Create sparse voxel feature based on the VoxelNet
-            batch_sparse_voxel_feats = []
-            batch_sparse_voxel_coord = []
+            # Create sparse voxel feature based on the VoxelNet for lidar points
+            batch_lidar_voxel_feats = []
+            batch_lidar_voxel_coord = []
             for point, data_sample in zip(inputs['points'], data_samples):
-                voxel_coords = data_sample.point_coors
-                voxel_coords = voxel_coords[:,[2,0,1]] # put D to first dimension
-                voxel_coords, inv_ind, voxel_counts = torch.unique(voxel_coords, dim=0, return_inverse=True, return_counts=True)
-                batch_sparse_voxel_coord.append(voxel_coords.long())
-                voxel_features = []
-                for i in range(len(voxel_coords)):
+                lidar_voxel_coords = data_sample.point_coors
+                lidar_voxel_coords = lidar_voxel_coords[:,[2,0,1]] # put D to first dimension
+                lidar_voxel_coords, inv_ind, voxel_counts = torch.unique(lidar_voxel_coords, dim=0, return_inverse=True, return_counts=True)
+                batch_lidar_voxel_coord.append(lidar_voxel_coords.long())
+                lidar_voxel_features = []
+                for i in range(len(lidar_voxel_coords)):
                     voxel=torch.zeros((35,8))
                     pts = point[inv_ind == i]
                     if voxel_counts[i] > 35:
@@ -62,12 +62,37 @@ class OccFusionDataPreprocessor(Det3DDataPreprocessor):
                     
                     # augment the points
                     voxel[:pts.shape[0], :] = torch.cat((pts, pts[:, :3] - torch.mean(pts[:, :3], 0)), dim=1)
-                    voxel_features.append(voxel)
-                batch_sparse_voxel_feats.append(torch.stack(voxel_features,dim=0).to(inputs['imgs'].device))
+                    lidar_voxel_features.append(voxel)
+                batch_lidar_voxel_feats.append(torch.stack(lidar_voxel_features,dim=0).to(inputs['imgs'].device))
             
-            batch_inputs['sparse_voxel_feats'] = batch_sparse_voxel_feats
-            batch_inputs['sparse_voxel_coords'] = batch_sparse_voxel_coord
+            batch_inputs['lidar_voxel_feats'] = batch_lidar_voxel_feats
+            batch_inputs['lidar_voxel_coords'] = batch_lidar_voxel_coord
         
+        if 'radars' in inputs:
+            batch_radar_voxel_feats = []
+            batch_radar_voxel_coord = []
+            for radar_pts in inputs['radars']:
+                min_bound = radar_pts.new_tensor(self.voxel_layer.point_cloud_range[:3])
+                radar_voxel_coors = torch.floor((radar_pts[:,:3] - min_bound) / radar_pts.new_tensor(self.voxel_layer.voxel_size)).int()
+                radar_voxel_coors = radar_voxel_coors[:,[2,0,1]] # put D to first dimension
+                radar_voxel_coors, inv_ind, voxel_counts = torch.unique(radar_voxel_coors, dim=0, return_inverse=True, return_counts=True)
+                batch_radar_voxel_coord.append(radar_voxel_coors.long())
+                radar_voxel_features = []
+                for i in range(len(radar_voxel_coors)):
+                    voxel=torch.zeros((35,11))
+                    pts = radar_pts[inv_ind == i]
+                    if voxel_counts[i] > 35:
+                        pts = pts[:35, :]
+                        voxel_counts[i] = 35
+                    
+                    # augment the points
+                    voxel[:pts.shape[0], :] = torch.cat((pts, pts[:, :5] - torch.mean(pts[:, :5], 0)), dim=1)
+                    radar_voxel_features.append(voxel)
+                batch_radar_voxel_feats.append(torch.stack(radar_voxel_features,dim=0).to(inputs['imgs'].device))
+            
+            batch_inputs['radar_voxel_feats'] = batch_radar_voxel_feats
+            batch_inputs['radar_voxel_coords'] = batch_radar_voxel_coord
+            
         
         if 'occ_200' in data['inputs']:
             batch_inputs['dense_occ_200'] = data['inputs']['occ_200']

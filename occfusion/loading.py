@@ -10,8 +10,7 @@ from mmcv.transforms.base import BaseTransform
 from mmengine.fileio import get
 from mmdet3d.datasets.transforms import LoadMultiViewImageFromFiles, Pack3DDetInputs
 from mmdet3d.registry import TRANSFORMS
-
-Number = Union[int, float]
+from nuscenes.utils.data_classes import RadarPointCloud
 
 
 @TRANSFORMS.register_module()
@@ -213,3 +212,131 @@ class LoadOccupancy(BaseTransform):
         repr_str = self.__class__.__name__
         return repr_str
 
+@TRANSFORMS.register_module()
+class LoadRadarPointsMultiSweeps(BaseTransform):
+   """Load radar points from multiple sweeps.
+   This is usually used for nuScenes dataset to utilize previous sweeps.
+   Args:
+       sweeps_num (int): Number of sweeps. Defaults to 10.
+       load_dim (int): Dimension number of the loaded points. Defaults to 5.
+       use_dim (list[int]): Which dimension to use. Defaults to [0, 1, 2, 4].
+   """
+
+
+   def __init__(self,
+                load_dim=18,
+                use_dim=[0, 1, 2, 8, 9, 18],
+                sweeps_num=5,
+                pc_range=[-50.0, -50.0, -5.0, 50.0, 50.0, 3.0]):
+       self.load_dim = load_dim
+       self.use_dim = use_dim
+       self.sweeps_num = sweeps_num
+       self.pc_range = pc_range
+
+
+   def _load_points(self, pts_filename):
+       """Private function to load point clouds data.
+       Args:
+           pts_filename (str): Filename of point clouds data.
+       Returns:
+           np.ndarray: An array containing point clouds data.
+           [N, 18]
+       """
+       radar_obj = RadarPointCloud.from_file(pts_filename)
+
+
+       #[18, N]
+       points = radar_obj.points
+
+
+       return points.transpose().astype(np.float32)
+
+
+   def __call__(self, results):
+       """Call function to load multi-sweep point clouds from files.
+       Args:
+           results (dict): Result dict containing multi-sweep point cloud \
+               filenames.
+       Returns:
+           dict: The result dict containing the multi-sweep points data. \
+               Added key and value are described below.
+               - points (np.ndarray | :obj:`BasePoints`): Multi-sweep point \
+                   cloud arrays.
+       """
+       radars_dict = results['radars']
+
+
+       points_sweep_list = []
+       for key, sweeps in radars_dict.items():
+           if len(sweeps) < self.sweeps_num:
+               idxes = list(range(len(sweeps)))
+           else:
+               idxes = list(range(self.sweeps_num))
+          
+           ts = sweeps[0]['timestamp'] * 1e-6
+           for idx in idxes:
+               sweep = sweeps[idx]
+
+
+               points_sweep = self._load_points(sweep['data_path'])
+               points_sweep = np.copy(points_sweep).reshape(-1, self.load_dim)
+
+
+               timestamp = sweep['timestamp'] * 1e-6
+               time_diff = ts - timestamp
+               time_diff = np.ones((points_sweep.shape[0], 1)) * time_diff
+
+
+               # velocity compensated by the ego motion in sensor frame
+               velo_comp = points_sweep[:, 8:10]
+               velo_comp = np.concatenate(
+                   (velo_comp, np.zeros((velo_comp.shape[0], 1))), 1)
+               velo_comp = velo_comp @ sweep['sensor2lidar_rotation'].T
+               velo_comp = velo_comp[:, :2]
+
+
+               # velocity in sensor frame
+               velo = points_sweep[:, 6:8]
+               velo = np.concatenate(
+                   (velo, np.zeros((velo.shape[0], 1))), 1)
+               velo = velo @ sweep['sensor2lidar_rotation'].T
+               velo = velo[:, :2]
+
+
+               points_sweep[:, :3] = points_sweep[:, :3] @ sweep[
+                   'sensor2lidar_rotation'].T
+               points_sweep[:, :3] += sweep['sensor2lidar_translation']
+
+
+               points_sweep_ = np.concatenate(
+                   [points_sweep[:, :6], velo,
+                    velo_comp, points_sweep[:, 10:],
+                    time_diff], axis=1)
+               points_sweep_list.append(points_sweep_)
+      
+       points = np.concatenate(points_sweep_list, axis=0)
+      
+       points = points[:, self.use_dim]
+      
+       points = torch.from_numpy(points)
+      
+       results['radars'] = points
+       return self.transform(results)
+
+
+   def transform(self, results):
+       radar_pts = results['radars']
+       radar_pts_xyz = radar_pts[:,0:3]
+       idx = torch.where((radar_pts_xyz[:,0] > self.pc_range[0])
+                         & (radar_pts_xyz[:,1] > self.pc_range[1])
+                         & (radar_pts_xyz[:,2] > self.pc_range[2])
+                         & (radar_pts_xyz[:,0] < self.pc_range[3])
+                         & (radar_pts_xyz[:,1] < self.pc_range[4])
+                         & (radar_pts_xyz[:,2] < self.pc_range[5]))
+       radar_pts = radar_pts[idx]
+       results['radars'] = radar_pts
+       return results
+  
+   def __repr__(self):
+       """str: Return a string that describes the module."""
+       return f'{self.__class__.__name__}(sweeps_num={self.sweeps_num})'

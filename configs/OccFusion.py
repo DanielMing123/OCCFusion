@@ -81,9 +81,16 @@ model = dict(
         num_cams=[None,None,None],
         enable_fix=False
         ),
-    svfe=dict(
+    svfe_lidar=dict(
         type='SVFE',
-        T=num_points_per_voxel,
+        num_pts=num_points_per_voxel,
+        input_dim=8,
+        grid_size=grid_size_vt
+        ),
+    svfe_radar=dict(
+        type='SVFE',
+        num_pts=num_points_per_voxel,
+        input_dim=11,
         grid_size=grid_size_vt
         ),
     occ_head=dict(
@@ -100,6 +107,12 @@ train_pipeline = [
         color_type='unchanged',
         num_views=6,
         backend_args=backend_args),
+    dict(
+        type='LoadRadarPointsMultiSweeps',
+        load_dim=18,
+        sweeps_num=5,
+        use_dim=[0, 1, 2, 8, 9, 18],
+        pc_range=point_cloud_range),
     dict(
         type='LoadPointsFromFile',
         coord_type='LIDAR',
@@ -129,7 +142,7 @@ train_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points', 'pts_semantic_mask','occ_200','occ_3d'],
+        keys=['img', 'points','radars','pts_semantic_mask','occ_200','occ_3d'],
         meta_keys=['lidar2img'])
 ]
 
@@ -140,6 +153,12 @@ val_pipeline = [
         color_type='unchanged',
         num_views=6,
         backend_args=backend_args),
+    dict(
+        type='LoadRadarPointsMultiSweeps',
+        load_dim=18,
+        sweeps_num=5,
+        use_dim=[0, 1, 2, 8, 9, 18],
+        pc_range=point_cloud_range),
     dict(
         type='LoadPointsFromFile',
         coord_type='LIDAR',
@@ -166,7 +185,7 @@ val_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points', 'pts_semantic_mask','occ_200','occ_3d'],
+        keys=['img', 'points', 'radars','pts_semantic_mask','occ_200','occ_3d'],
         meta_keys=['lidar2img'])
 ]
 
@@ -184,7 +203,7 @@ train_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_prefix=data_prefix,
-        ann_file='nuscenes_infos_train.pkl',
+        ann_file='nuscenes_infos_occfusion_train.pkl',
         pipeline=train_pipeline,
         test_mode=False))
 
@@ -198,7 +217,7 @@ val_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_prefix=data_prefix,
-        ann_file='nuscenes_infos_val.pkl',
+        ann_file='nuscenes_infos_occfusion_val.pkl',
         pipeline=val_pipeline,
         test_mode=True)) # True
 

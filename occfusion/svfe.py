@@ -47,13 +47,16 @@ class VFE(nn.Module):
 @MODELS.register_module()
 class SVFE(BaseModule):
 
-    def __init__(self, T, grid_size):
+    def __init__(self, 
+                 num_pts,
+                 input_dim,
+                 grid_size):
         super(SVFE, self).__init__()
-        self.vfe_1 = VFE(8,16,T)
-        self.vfe_2 = VFE(16,32,T)
+        self.vfe_1 = VFE(input_dim,16,num_pts)
+        self.vfe_2 = VFE(16,32,num_pts)
         self.fcn = FCN(32,64)
         self.grid_size = grid_size
-        self.bn = nn.BatchNorm1d(8)
+        self.bn = nn.BatchNorm1d(input_dim)
         
     def voxel_indexing(self, sparse_features, coords):
         dim = sparse_features.shape[-1] # dim is the feature channel
