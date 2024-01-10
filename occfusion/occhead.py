@@ -13,49 +13,27 @@ class OccHead(BaseModule):
         super(OccHead, self).__init__()
         self.channels = channels
         self.num_cls = num_classes        
-        self.mlp_occ_lvl0 = nn.Sequential(
-            nn.Linear(self.channels[0], self.channels[0]),
-            nn.ReLU(),
-            nn.Linear(self.channels[0], self.channels[0]),
-            nn.ReLU(),
-            nn.Linear(self.channels[0], self.num_cls)
+        self.mlp_occs = nn.ModuleList()
+        for i in range(len(self.channels)):
+            mlp_occ = nn.Sequential(
+                nn.Linear(self.channels[i], self.channels[i]),
+                nn.ReLU(),
+                nn.Linear(self.channels[i], self.channels[i]),
+                nn.ReLU(),
+                nn.Linear(self.channels[i], self.num_cls)
             )
-        self.mlp_occ_lvl1 = nn.Sequential(
-            nn.Linear(self.channels[1], self.channels[1]),
-            nn.ReLU(),
-            nn.Linear(self.channels[1], self.channels[1]),
-            nn.ReLU(),
-            nn.Linear(self.channels[1], self.num_cls)
-            )
-        self.mlp_occ_lvl2 = nn.Sequential(
-            nn.Linear(self.channels[2], self.channels[2]),
-            nn.ReLU(),
-            nn.Linear(self.channels[2], self.channels[2]),
-            nn.ReLU(),
-            nn.Linear(self.channels[2], self.num_cls)
-            )
-        self.mlp_occ_lvl3 = nn.Sequential(
-            nn.Linear(self.channels[3], self.channels[3]),
-            nn.ReLU(),
-            nn.Linear(self.channels[3], self.channels[3]),
-            nn.ReLU(),
-            nn.Linear(self.channels[3], self.num_cls)
-            )
+            self.mlp_occs.append(mlp_occ)
     
     @autocast('cuda',torch.float32)
-    def forward(self,
-                xyz_feat_lvl0,
-                xyz_feat_lvl1,
-                xyz_feat_lvl2,
-                xyz_feat_lvl3):        
+    def forward(self, xyz_volumes):        
         if self.training:
-            logits_lvl0 = self.mlp_occ_lvl0(xyz_feat_lvl0.permute(0,2,3,4,1))
-            logits_lvl1 = self.mlp_occ_lvl1(xyz_feat_lvl1.permute(0,2,3,4,1))
-            logits_lvl2 = self.mlp_occ_lvl2(xyz_feat_lvl2.permute(0,2,3,4,1))
-            logits_lvl3 = self.mlp_occ_lvl3(xyz_feat_lvl3.permute(0,2,3,4,1))
-            return logits_lvl0, logits_lvl1, logits_lvl2, logits_lvl3
+            logits = []
+            for mlp_occ,xyz_volume in zip(self.mlp_occs, xyz_volumes):
+                logit = mlp_occ(xyz_volume.permute(0,2,3,4,1))
+                logits.append(logit)
+            return logits
         else:
-            logits_lvl0 = self.mlp_occ_lvl0(xyz_feat_lvl0.permute(0,2,3,4,1))
+            logits_lvl0 = self.mlp_occs[0](xyz_volumes[0].permute(0,2,3,4,1))
             return logits_lvl0
                 
         

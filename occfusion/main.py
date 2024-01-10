@@ -14,6 +14,8 @@ class OccFusion(Base3DSegmentor):
     def __init__(self,
                  pts_grid_set,
                  use_occ3d,
+                 use_lidar,
+                 use_radar,
                  data_preprocessor,
                  backbone,
                  neck,
@@ -22,16 +24,20 @@ class OccFusion(Base3DSegmentor):
                  svfe_radar,
                  occ_head):
         super().__init__(data_preprocessor=data_preprocessor)
+        self.occ3d = use_occ3d
+        self.use_lidar = use_lidar
+        self.use_radar = use_radar
         self.img_backbone = MODELS.build(backbone)
         self.img_neck = MODELS.build(neck)
-        self.svfe_lidar = MODELS.build(svfe_lidar)
-        self.svfe_radar = MODELS.build(svfe_radar)
+        if self.use_lidar:
+            self.svfe_lidar = MODELS.build(svfe_lidar)
+        if self.use_radar:
+            self.svfe_radar = MODELS.build(svfe_radar)
         self.view_transformer = MODELS.build(view_transformer)
         self.occ_head = MODELS.build(occ_head)
         self.pts_grid_set = pts_grid_set
         self.loss_fl = FocalLoss(gamma=2,ignore_index=255) # 0: noise label weights=
         self.loss_lovasz = LovaszSoftmaxV3(ignore_index=255)
-        self.occ3d = use_occ3d
 
     def multiscale_supervision(self, gt_occ, ratio, gt_shape):
         gt = torch.zeros([gt_shape[0], gt_shape[1], gt_shape[2], gt_shape[3]]).to(gt_occ[0].device).type(torch.long) 
@@ -71,10 +77,19 @@ class OccFusion(Base3DSegmentor):
             img_metas.append(img_meta)
         
         img_feats = self.extract_feat(imgs)
-        # lidar_xyz_feat = self.svfe_lidar(batch_inputs['lidar_voxel_feats'], batch_inputs['lidar_voxel_coords']) # [B, C, X, Y, Z]
-        radar_xyz_feat = self.svfe_radar(batch_inputs['radar_voxel_feats'], batch_inputs['radar_voxel_coords'])
-        xyz_feat_lvl0,xyz_feat_lvl1,xyz_feat_lvl2,xyz_feat_lvl3 = self.view_transformer(img_feats, img_metas, radar_xyz_feat) # [B, C, X, Y, Z]
-        return self.occ_head(xyz_feat_lvl0,xyz_feat_lvl1,xyz_feat_lvl2,xyz_feat_lvl3) # fused_xyz_feat
+        if self.use_lidar:
+            lidar_xyz_feat = self.svfe_lidar(batch_inputs['lidar_voxel_feats'], batch_inputs['lidar_voxel_coords']) # [B, C, X, Y, Z]
+        if self.use_radar:
+            radar_xyz_feat = self.svfe_radar(batch_inputs['radar_voxel_feats'], batch_inputs['radar_voxel_coords'])
+        if (not self.use_lidar) and (not self.use_radar):
+            xyz_volumes = self.view_transformer(img_feats, img_metas) # [B, C, X, Y, Z]
+        elif self.use_lidar and (not self.use_radar):
+            xyz_volumes = self.view_transformer.forward_two(img_feats, img_metas, lidar_xyz_feat)
+        elif (not self.use_lidar) and self.use_radar:
+            xyz_volumes = self.view_transformer.forward_two(img_feats, img_metas, radar_xyz_feat)
+        elif self.use_lidar and self.use_radar:
+            xyz_volumes = self.view_transformer.forward_three(img_feats, img_metas, lidar_xyz_feat, radar_xyz_feat)
+        return self.occ_head(xyz_volumes) # fused_xyz_feat
              
     def loss(self,batch_inputs, batch_data_samples):
         vox_logits_lvl0, vox_logits_lvl1,vox_logits_lvl2,vox_logits_lvl3 = self._forward(batch_inputs,batch_data_samples)

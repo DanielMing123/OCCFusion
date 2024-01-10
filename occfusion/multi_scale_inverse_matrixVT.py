@@ -23,7 +23,9 @@ class MultiScaleInverseMatrixVT(BaseModule):
                  z_bound=[-5., 3.],
                  sampling_rate=[3,4,5],
                  num_cams=[None,None,None],
-                 enable_fix=False):
+                 enable_fix=False,
+                 use_lidar=False,
+                 use_radar=False):
         super().__init__()
         self.grid_size = grid_size
         self.in_channels = in_channel
@@ -31,86 +33,29 @@ class MultiScaleInverseMatrixVT(BaseModule):
         self.num_cams = num_cams
         self.enable_fix = enable_fix
         self.imvts = nn.ModuleList()
-        self.up_sample1 = nn.Sequential(
-            nn.ConvTranspose3d(self.in_channels[1],self.in_channels[0],kernel_size=4,stride=2,padding=1),
-            nn.BatchNorm3d(self.in_channels[0]),
-            nn.ReLU()    
-        )
-        self.up_sample2 = nn.Sequential(
-            nn.ConvTranspose3d(self.in_channels[2],self.in_channels[1],kernel_size=4,stride=2,padding=1),
-            nn.BatchNorm3d(self.in_channels[1]),
-            nn.ReLU()    
-        )
-        self.up_sample3 = nn.Sequential(
-            nn.ConvTranspose3d(self.in_channels[3],self.in_channels[2],kernel_size=4,stride=2,padding=1),
-            nn.BatchNorm3d(self.in_channels[2]),
-            nn.ReLU()    
-        )
-        self.refine_lvl0 = nn.Sequential(
-            nn.Conv3d(self.in_channels[0],self.in_channels[0],kernel_size=3,padding=1),
-            nn.BatchNorm3d(self.in_channels[0]),
-            nn.ReLU()
-        )
-        self.refine_lvl1 = nn.Sequential(
-            nn.Conv3d(self.in_channels[1],self.in_channels[1],kernel_size=3,padding=1),
-            nn.BatchNorm3d(self.in_channels[1]),
-            nn.ReLU() 
-        )
-        self.refine_lvl2 = nn.Sequential(
-            nn.Conv3d(self.in_channels[2],self.in_channels[2],kernel_size=3,padding=1),
-            nn.BatchNorm3d(self.in_channels[2]),
-            nn.ReLU()  
-        )
-        self.refine_lvl3 = nn.Sequential(
-            nn.Conv3d(self.in_channels[3],self.in_channels[3],kernel_size=3,padding=1),
-            nn.BatchNorm3d(self.in_channels[3]),
-            nn.ReLU()
-        )
-        self.lidar_xyz_lvl1 = nn.Sequential(
-            nn.Conv3d(self.in_channels[1],self.in_channels[1],kernel_size=3,padding=1),
-            nn.BatchNorm3d(self.in_channels[1]),
-            nn.ReLU()    
-        )
-        self.lidar_xyz_lvl2 = nn.Sequential(
-            nn.Conv3d(self.in_channels[1],self.in_channels[2],kernel_size=7,stride=2,padding=3),
-            nn.BatchNorm3d(self.in_channels[2]),
-            nn.ReLU(), 
-            nn.Conv3d(self.in_channels[2],self.in_channels[2],kernel_size=3,padding=1),
-            nn.BatchNorm3d(self.in_channels[2]),
-            nn.ReLU()    
-        )
-        self.lidar_xyz_lvl3 = nn.Sequential(
-            nn.Conv3d(self.in_channels[2],self.in_channels[3],kernel_size=7,stride=2,padding=3),
-            nn.BatchNorm3d(self.in_channels[3]),
-            nn.ReLU(), 
-            nn.Conv3d(self.in_channels[3],self.in_channels[3],kernel_size=3,padding=1),
-            nn.BatchNorm3d(self.in_channels[3]),
-            nn.ReLU()    
-        )
+        if use_lidar or use_radar:
+            self.lidar_xyz_refines = nn.ModuleList()
+            self.lidar_xy_refines = nn.ModuleList()
+        if use_radar and use_lidar:
+            self.radar_xyz_refines = nn.ModuleList()
+            self.radar_xy_refines = nn.ModuleList()
+        self.up_samples = nn.ModuleList()
+        self.refines = nn.ModuleList()
         
-        self.lidar_xy_lvl1 = nn.Sequential(
-            nn.Conv2d(self.in_channels[1],self.in_channels[1],kernel_size=3,padding=1),
-            nn.BatchNorm2d(self.in_channels[1]),
-            nn.ReLU()    
-        )
-        self.lidar_xy_lvl2 = nn.Sequential(
-            nn.Conv2d(self.in_channels[1],self.in_channels[2],kernel_size=7,stride=2,padding=3),
-            nn.BatchNorm2d(self.in_channels[2]),
-            nn.ReLU(), 
-            nn.Conv2d(self.in_channels[2],self.in_channels[2],kernel_size=3,padding=1),
-            nn.BatchNorm2d(self.in_channels[2]),
-            nn.ReLU()    
-        )
-        self.lidar_xy_lvl3 = nn.Sequential(
-            nn.Conv2d(self.in_channels[2],self.in_channels[3],kernel_size=7,stride=2,padding=3),
-            nn.BatchNorm2d(self.in_channels[3]),
-            nn.ReLU(), 
-            nn.Conv2d(self.in_channels[3],self.in_channels[3],kernel_size=3,padding=1),
-            nn.BatchNorm2d(self.in_channels[3]),
-            nn.ReLU()    
-        )
+        for i in range(len(self.in_channels)):
+            refine = nn.Sequential(
+                nn.Conv3d(self.in_channels[i],self.in_channels[i],kernel_size=3,padding=1),
+                nn.BatchNorm3d(self.in_channels[i]),
+                nn.ReLU()
+            )
+            self.refines.append(refine)
         
         for i in range(len(self.grid_size)):
+            up_sample = nn.Sequential(
+                nn.ConvTranspose3d(self.in_channels[i+1],self.in_channels[i],kernel_size=4,stride=2,padding=1),
+                nn.BatchNorm3d(self.in_channels[i]),
+                nn.ReLU()    
+            )
             imvt = SingleScaleInverseMatrixVT(feature_strides[i],
                                                 in_index=i,
                                                 in_channel=self.in_channels[i+1],
@@ -120,34 +65,153 @@ class MultiScaleInverseMatrixVT(BaseModule):
                                                 z_bound=z_bound,
                                                 sampling_rate=self.samp_rate[i],
                                                 num_cams=self.num_cams[i],
-                                                enable_fix=self.enable_fix)
+                                                enable_fix=self.enable_fix,
+                                                use_lidar=use_lidar,
+                                                use_radar=use_radar)
+            if use_lidar or use_radar:
+                if i==0:
+                    lidar_xyz_refine = nn.Sequential(
+                        nn.Conv3d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm3d(self.in_channels[i+1]),
+                        nn.ReLU()
+                    )
+                    lidar_xy_refine = nn.Sequential(
+                        nn.Conv2d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm2d(self.in_channels[i+1]),
+                        nn.ReLU()    
+                    )
+                else:
+                    lidar_xyz_refine = nn.Sequential(
+                        nn.Conv3d(self.in_channels[i],self.in_channels[i+1],kernel_size=7,stride=2,padding=3),
+                        nn.BatchNorm3d(self.in_channels[i+1]),
+                        nn.ReLU(), 
+                        nn.Conv3d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm3d(self.in_channels[i+1]),
+                        nn.ReLU()    
+                    )
+                    lidar_xy_refine = nn.Sequential(
+                        nn.Conv2d(self.in_channels[i],self.in_channels[i+1],kernel_size=7,stride=2,padding=3),
+                        nn.BatchNorm2d(self.in_channels[i+1]),
+                        nn.ReLU(), 
+                        nn.Conv2d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm2d(self.in_channels[i+1]),
+                        nn.ReLU()    
+                    )
+                self.lidar_xyz_refines.append(lidar_xyz_refine)
+                self.lidar_xy_refines.append(lidar_xy_refine)
+            
+            if use_radar and use_lidar:
+                if i==0:
+                    radar_xyz_refine = nn.Sequential(
+                        nn.Conv3d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm3d(self.in_channels[i+1]),
+                        nn.ReLU()
+                    )
+                    radar_xy_refine = nn.Sequential(
+                        nn.Conv2d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm2d(self.in_channels[i+1]),
+                        nn.ReLU()    
+                    )
+                else:
+                    radar_xyz_refine = nn.Sequential(
+                        nn.Conv3d(self.in_channels[i],self.in_channels[i+1],kernel_size=7,stride=2,padding=3),
+                        nn.BatchNorm3d(self.in_channels[i+1]),
+                        nn.ReLU(), 
+                        nn.Conv3d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm3d(self.in_channels[i+1]),
+                        nn.ReLU()    
+                    )
+                    radar_xy_refine = nn.Sequential(
+                        nn.Conv2d(self.in_channels[i],self.in_channels[i+1],kernel_size=7,stride=2,padding=3),
+                        nn.BatchNorm2d(self.in_channels[i+1]),
+                        nn.ReLU(), 
+                        nn.Conv2d(self.in_channels[i+1],self.in_channels[i+1],kernel_size=3,padding=1),
+                        nn.BatchNorm2d(self.in_channels[i+1]),
+                        nn.ReLU()    
+                    )
+                self.radar_xyz_refines.append(radar_xyz_refine)
+                self.radar_xy_refines.append(radar_xy_refine)
+            
             self.imvts.append(imvt)
-
+            self.up_samples.append(up_sample)
+                
     @autocast('cuda',torch.float32)
-    def forward(self, img_feats, img_metas, lidar_xyz_ori_feat):
-        lidar_xy_ori_feat = lidar_xyz_ori_feat.mean(dim=4)
-        lidar_xyz_feat_lvl1 = self.lidar_xyz_lvl1(lidar_xyz_ori_feat)
-        lidar_xyz_feat_lvl2 = self.lidar_xyz_lvl2(lidar_xyz_feat_lvl1)
-        lidar_xyz_feat_lvl3 = self.lidar_xyz_lvl3(lidar_xyz_feat_lvl2)
+    def forward(self, img_feats, img_metas):
         
-        lidar_xy_feat_lvl1 = self.lidar_xy_lvl1(lidar_xy_ori_feat)
-        lidar_xy_feat_lvl2 = self.lidar_xy_lvl2(lidar_xy_feat_lvl1)
-        lidar_xy_feat_lvl3 = self.lidar_xy_lvl3(lidar_xy_feat_lvl2)
+        cam_xyz_feats = []
+        for i in range(len(self.grid_size)):
+            cam_xyz_feat = self.imvts[i](img_feats[i], img_metas)
+            cam_xyz_feats.append(cam_xyz_feat)
+
+        xyz_volumes = []
+        for i in range(len(cam_xyz_feats),-1,-1):
+            if i == 3:
+                xyz_volume = self.refines[i](cam_xyz_feats[i-1])
+            elif i == 0:
+                xyz_volume = self.refines[i](self.up_samples[i](xyz_volumes[-1]))
+            else:
+                xyz_volume = self.refines[i](cam_xyz_feats[i-1] + self.up_samples[i](xyz_volumes[-1]))
+            xyz_volumes.append(xyz_volume)
         
-        lidar_xyz_feats = [lidar_xyz_feat_lvl1,lidar_xyz_feat_lvl2,lidar_xyz_feat_lvl3]
-        lidar_xy_feats = [lidar_xy_feat_lvl1,lidar_xy_feat_lvl2,lidar_xy_feat_lvl3]
+        return xyz_volumes[::-1]
+    
+    @autocast('cuda',torch.float32)
+    def forward_two(self, img_feats, img_metas, lidar_xyz_feat):
+        lidar_xy_feat = lidar_xyz_feat.mean(dim=4)
         
         merged_xyz_feats = []
         for i in range(len(self.grid_size)):
-            merged_xyz_feat = self.imvts[i](img_feats[i], img_metas, lidar_xyz_feats[i], lidar_xy_feats[i])
+            lidar_xyz_feat = self.lidar_xyz_refines[i](lidar_xyz_feat)
+            lidar_xy_feat = self.lidar_xy_refines[i](lidar_xy_feat)
+            merged_xyz_feat = self.imvts[i].forward_two(img_feats[i], 
+                                                        img_metas, 
+                                                        lidar_xyz_feat, 
+                                                        lidar_xy_feat)
             merged_xyz_feats.append(merged_xyz_feat)
 
-        xyz_volume_lvl3 = self.refine_lvl3(merged_xyz_feats[2])
-        xyz_volume_lvl2 = self.refine_lvl2(merged_xyz_feats[1] + self.up_sample3(xyz_volume_lvl3)) # skip connection
-        xyz_volume_lvl1 = self.refine_lvl1(merged_xyz_feats[0] + self.up_sample2(xyz_volume_lvl2)) # skip connection
-        xyz_volume_lvl0 = self.refine_lvl0(self.up_sample1(xyz_volume_lvl1))
+        xyz_volumes = []
+        for i in range(len(merged_xyz_feats),-1,-1):
+            if i == 3:
+                xyz_volume = self.refines[i](merged_xyz_feats[i-1])
+            elif i == 0:
+                xyz_volume = self.refines[i](self.up_samples[i](xyz_volumes[-1]))
+            else:
+                xyz_volume = self.refines[i](merged_xyz_feats[i-1] + self.up_samples[i](xyz_volumes[-1]))
+            xyz_volumes.append(xyz_volume)
         
-        return xyz_volume_lvl0,xyz_volume_lvl1,xyz_volume_lvl2,xyz_volume_lvl3
+        return xyz_volumes[::-1]
+    
+    @autocast('cuda',torch.float32)
+    def forward_three(self, img_feats, img_metas, lidar_xyz_feat, radar_xyz_feat):
+        lidar_xy_feat = lidar_xyz_feat.mean(dim=4)
+        radar_xy_feat = radar_xyz_feat.mean(dim=4)
+        
+        merged_xyz_feats = []
+        for i in range(len(self.grid_size)):
+            lidar_xyz_feat = self.lidar_xyz_refines[i](lidar_xyz_feat)
+            radar_xyz_feat = self.radar_xyz_refines[i](radar_xyz_feat)
+            lidar_xy_feat = self.lidar_xy_refines[i](lidar_xy_feat)
+            radar_xy_feat = self.radar_xy_refines[i](radar_xy_feat)
+            merged_xyz_feat = self.imvts[i].forward_three(img_feats[i], 
+                                                          img_metas, 
+                                                          lidar_xyz_feat, 
+                                                          lidar_xy_feat,
+                                                          radar_xyz_feat,
+                                                          radar_xy_feat)
+            merged_xyz_feats.append(merged_xyz_feat)
+
+        xyz_volumes = []
+        for i in range(len(merged_xyz_feats),-1,-1):
+            if i == 3:
+                xyz_volume = self.refines[i](merged_xyz_feats[i-1])
+            elif i == 0:
+                xyz_volume = self.refines[i](self.up_samples[i](xyz_volumes[-1]))
+            else:
+                xyz_volume = self.refines[i](merged_xyz_feats[i-1] + self.up_samples[i](xyz_volumes[-1]))
+            xyz_volumes.append(xyz_volume)
+        
+        return xyz_volumes[::-1]
+    
     
 class SingleScaleInverseMatrixVT(BaseModule):
     def __init__(self,
@@ -160,7 +224,9 @@ class SingleScaleInverseMatrixVT(BaseModule):
                  z_bound=[-5., 3.],
                  sampling_rate=4,
                  num_cams=None,
-                 enable_fix=False):
+                 enable_fix=False,
+                 use_lidar=False,
+                 use_radar=False):
         super().__init__()
         self.grid_size = torch.tensor(grid_size)
         self.x_bound = x_bound
@@ -170,7 +236,8 @@ class SingleScaleInverseMatrixVT(BaseModule):
         self.in_index = in_index
         self.ds_rate = feature_strides
         self.coord = self._create_gridmap_anchor()
-        # self.fix_param = torch.load(f'./fix_param_small/{self.in_index}.pth.tar')
+        if enable_fix:
+            self.fix_param = torch.load(f'./fix_param_small/{self.in_index}.pth.tar')
         self.enable_fix = enable_fix
         self.num_cams = num_cams
         self.down_conv3d = nn.Sequential(nn.Conv3d(512,in_channel,1),
@@ -193,8 +260,12 @@ class SingleScaleInverseMatrixVT(BaseModule):
                                     nn.ReLU())
         self.combine_coeff = nn.Conv3d(in_channel, 1, kernel_size=1)
         self.aspp_xy = BottleNeckASPP(in_channel,in_channel,[1, 6, 12, 18])
-        self.xyz_fusion = DynamicFusion3D(in_channel*2, in_channel)
-        self.xy_fusion = DynamicFusion2D(in_channel*2, in_channel)
+        if use_lidar and use_radar:
+            self.xyz_fusion = DynamicFusion3D(in_channel*3, in_channel)
+            self.xy_fusion = DynamicFusion2D(in_channel*3, in_channel)
+        elif use_lidar or use_radar:
+            self.xyz_fusion = DynamicFusion3D(in_channel*2, in_channel)
+            self.xy_fusion = DynamicFusion2D(in_channel*2, in_channel)
         if in_index == 0: 
             self.bev_attn_layer = EfficientViTBlock(type='s',
                                                 ed=in_channel,
@@ -315,7 +386,49 @@ class SingleScaleInverseMatrixVT(BaseModule):
         return vt_xyz, vt_xy, div_xyz, div_xy, valid_cams_idx
 
     @autocast('cuda',torch.float32)
-    def forward(self, img_feats, img_metas, lidar_xyz_feat, lidar_xy_feat):
+    def forward(self, 
+                img_feats, 
+                img_metas):
+        X, Y, Z = self.grid_size
+        B, _, C, H, W = img_feats.shape
+
+        if self.enable_fix:
+            vt_xyz = self.fix_param['vt_xyz'].to(img_feats.device)
+            vt_xy = self.fix_param['vt_xy'].to(img_feats.device)
+            div_xyz = self.fix_param['div_xyz'].to(img_feats.device)
+            div_xy = self.fix_param['div_xy'].to(img_feats.device)
+            valid_nc = self.fix_param['valid_nc'].to(img_feats.device)
+        else:
+            vt_xyz, vt_xy, div_xyz, div_xy, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+            vt_xyz = vt_xyz.to_sparse_csr()
+            vt_xy = vt_xy.to_sparse_csr()
+        
+        valid_nc = valid_nc.unsqueeze(0).unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
+        img_feats = torch.gather(img_feats, 1, valid_nc)
+        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(C, -1)
+        
+        cam_xyz = torch.sparse.mm(img_feats,vt_xyz) / div_xyz
+        cam_xyz_feat = cam_xyz.view(B, C, X, Y, Z)
+        cam_xy = torch.sparse.mm(img_feats,vt_xy) / div_xy
+        cam_xy_feat = cam_xy.view(B, C, X, Y)
+        
+        cam_xyz_feat = self.down_conv3d(cam_xyz_feat)
+        cam_xy_feat = self.xy_conv(cam_xy_feat)
+                
+        # Apply ASPP on final 3D volume BEV slice
+        cam_bev = self.bev_attn_layer(cam_xy_feat)
+        cam_bev = self.aspp_xy(cam_bev)
+        coeff = self.combine_coeff(cam_xyz_feat).sigmoid()
+        cam_xyz_feat = cam_xyz_feat + coeff * cam_bev.unsqueeze(-1)
+        
+        return cam_xyz_feat
+    
+    @autocast('cuda',torch.float32)
+    def forward_two(self, 
+                    img_feats, 
+                    img_metas, 
+                    lidar_xyz_feat, 
+                    lidar_xy_feat):
         X, Y, Z = self.grid_size
         B, _, C, H, W = img_feats.shape
 
@@ -346,6 +459,54 @@ class SingleScaleInverseMatrixVT(BaseModule):
         merged_xyz_feat = self.xyz_fusion(merged_xyz_feat)
         
         merged_xy_feat = torch.cat([cam_xy_feat,lidar_xy_feat],dim=1)
+        merged_xy_feat = self.xy_fusion(merged_xy_feat)
+        
+        # Apply ASPP on final 3D volume BEV slice
+        merged_bev = self.bev_attn_layer(merged_xy_feat)
+        merged_bev = self.aspp_xy(merged_bev)
+        coeff = self.combine_coeff(merged_xyz_feat).sigmoid()
+        merged_xyz_feat = merged_xyz_feat + coeff * merged_bev.unsqueeze(-1)
+        
+        return merged_xyz_feat
+    
+    @autocast('cuda',torch.float32)
+    def forward_three(self, 
+                      img_feats, 
+                      img_metas, 
+                      lidar_xyz_feat, 
+                      lidar_xy_feat,
+                      radar_xyz_feat,
+                      radar_xy_feat):
+        X, Y, Z = self.grid_size
+        B, _, C, H, W = img_feats.shape
+
+        if self.enable_fix:
+            vt_xyz = self.fix_param['vt_xyz'].to(img_feats.device)
+            vt_xy = self.fix_param['vt_xy'].to(img_feats.device)
+            div_xyz = self.fix_param['div_xyz'].to(img_feats.device)
+            div_xy = self.fix_param['div_xy'].to(img_feats.device)
+            valid_nc = self.fix_param['valid_nc'].to(img_feats.device)
+        else:
+            vt_xyz, vt_xy, div_xyz, div_xy, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+            vt_xyz = vt_xyz.to_sparse_csr()
+            vt_xy = vt_xy.to_sparse_csr()
+        
+        valid_nc = valid_nc.unsqueeze(0).unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
+        img_feats = torch.gather(img_feats, 1, valid_nc)
+        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(C, -1)
+        
+        cam_xyz = torch.sparse.mm(img_feats,vt_xyz) / div_xyz
+        cam_xyz_feat = cam_xyz.view(B, C, X, Y, Z)
+        cam_xy = torch.sparse.mm(img_feats,vt_xy) / div_xy
+        cam_xy_feat = cam_xy.view(B, C, X, Y)
+        
+        cam_xyz_feat = self.down_conv3d(cam_xyz_feat)
+        cam_xy_feat = self.xy_conv(cam_xy_feat)
+        
+        merged_xyz_feat = torch.cat([cam_xyz_feat,lidar_xyz_feat,radar_xyz_feat],dim=1)
+        merged_xyz_feat = self.xyz_fusion(merged_xyz_feat)
+        
+        merged_xy_feat = torch.cat([cam_xy_feat,lidar_xy_feat,radar_xy_feat],dim=1)
         merged_xy_feat = self.xy_fusion(merged_xy_feat)
         
         # Apply ASPP on final 3D volume BEV slice

@@ -30,12 +30,17 @@ pts_grid_setting = dict(
     grid_size = grid_size_vt
 )
 
+use_lidar=True
+use_radar=True
+use_occ3d=False
 find_unused_parameters=True
 
 model = dict(
     type='OccFusion',
     pts_grid_set=pts_grid_setting,
-    use_occ3d=False,
+    use_occ3d=use_occ3d,
+    use_lidar=use_lidar,
+    use_radar=use_radar,
     data_preprocessor=dict(
         type='OccFusionDataPreprocessor',
         pad_size_divisor=32,
@@ -79,7 +84,9 @@ model = dict(
         z_bound=[-5., 3.],
         sampling_rate=[4,5,6],
         num_cams=[None,None,None],
-        enable_fix=False
+        enable_fix=False,
+        use_lidar=use_lidar,
+        use_radar=use_radar
         ),
     svfe_lidar=dict(
         type='SVFE',
