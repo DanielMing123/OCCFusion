@@ -30,10 +30,10 @@ pts_grid_setting = dict(
     grid_size = grid_size_vt
 )
 
-use_lidar=True
-use_radar=True
+use_lidar=False
+use_radar=False 
 use_occ3d=False
-find_unused_parameters=True
+find_unused_parameters=False
 
 model = dict(
     type='OccFusion',
@@ -117,7 +117,7 @@ train_pipeline = [
     dict(
         type='LoadRadarPointsMultiSweeps',
         load_dim=18,
-        sweeps_num=5,
+        sweeps_num=6, # 6
         use_dim=[0, 1, 2, 8, 9, 18],
         pc_range=point_cloud_range),
     dict(
@@ -128,7 +128,7 @@ train_pipeline = [
         backend_args=backend_args),
     dict(
         type='LoadPointsFromMultiSweeps',
-        sweeps_num=9,
+        sweeps_num=9, # 9
         load_dim=5,
         use_dim=5,
         pad_empty_sweeps=True,
@@ -149,7 +149,7 @@ train_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points','radars','pts_semantic_mask','occ_200','occ_3d'],
+        keys=['img', 'points','pts_semantic_mask','radars','occ_200','occ3d'], 
         meta_keys=['lidar2img'])
 ]
 
@@ -163,7 +163,7 @@ val_pipeline = [
     dict(
         type='LoadRadarPointsMultiSweeps',
         load_dim=18,
-        sweeps_num=5,
+        sweeps_num=6, # 6
         use_dim=[0, 1, 2, 8, 9, 18],
         pc_range=point_cloud_range),
     dict(
@@ -192,7 +192,7 @@ val_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points', 'radars','pts_semantic_mask','occ_200','occ_3d'],
+        keys=['img', 'points','pts_semantic_mask','radars','occ_200','occ3d'], 
         meta_keys=['lidar2img'])
 ]
 
@@ -201,7 +201,7 @@ test_pipeline = val_pipeline
 
 
 train_dataloader = dict(
-    batch_size=1,
+    batch_size=3, # 4
     num_workers=4,
     persistent_workers=True,
     drop_last=True,
@@ -215,7 +215,7 @@ train_dataloader = dict(
         test_mode=False))
 
 val_dataloader = dict(
-    batch_size=1,
+    batch_size=4,
     num_workers=4,
     persistent_workers=True,
     drop_last=False,

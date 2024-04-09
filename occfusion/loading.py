@@ -181,29 +181,28 @@ class LoadOccupancy(BaseTransform):
     def transform(self, results: dict) -> dict:
         occ_file_name = results['lidar_points']['lidar_path'].split('/')[-1] + '.npy'
         occ_200_folder = results['lidar_points']['lidar_path'].split('samples')[0] + 'occ_samples'
-        occ_3d_folder = results['lidar_points']['lidar_path'].split('samples')[0] + 'Occ3D'
+        # occ_3d_folder = results['lidar_points']['lidar_path'].split('samples')[0] + 'Occ3D'
         occ_200_path = os.path.join(occ_200_folder, occ_file_name)
-        occ_3d_path = os.path.join(occ_3d_folder, results['token'], 'labels.npz')
+        # occ_3d_path = os.path.join(occ_3d_folder, results['token'], 'labels.npz')
         occ_200 = np.load(occ_200_path)
-        occ_3d = np.load(occ_3d_path)
-        occ_3d_semantic = occ_3d['semantics']
-        occ_3d_cam_mask = occ_3d['mask_camera']
-        occ_3d_gt = occ_3d_semantic * occ_3d_cam_mask
-        occ_3d_gt[occ_3d_gt==0]=255
-        occ_3d_gt[occ_3d_gt==17]=0
-        occ_3d_gt = torch.from_numpy(occ_3d_gt)
-        idx = torch.where(occ_3d_gt > 0)
-        label = occ_3d_gt[idx[0],idx[1],idx[2]]
-        occ_3d = torch.stack([idx[0],idx[1],idx[2],label],dim=1).float()
-        rot_mat = torch.tensor([[np.cos(-np.pi/2), -np.sin(-np.pi/2)],
-                                [np.sin(-np.pi/2), np.cos(-np.pi/2)]]).float()
-        occ_3d[:,0:2] = torch.mm(occ_3d[:,0:2], rot_mat)
-        occ_3d = occ_3d.long()
+        # occ_3d = np.load(occ_3d_path)
+        # occ_3d_semantic = occ_3d['semantics']
+        # occ_3d_cam_mask = occ_3d['mask_camera']
+        # occ_3d_semantic[occ_3d_semantic==0]=18
+        # occ_3d_gt = occ_3d_semantic * occ_3d_cam_mask
+        # occ_3d_gt[occ_3d_gt==0]=255
+        # occ_3d_gt[occ_3d_gt==17]=0
+        # occ_3d_gt[occ_3d_gt==18]=17
+        # occ_3d_gt = torch.from_numpy(occ_3d_gt)
+        # idx = torch.where(occ_3d_gt > 0)
+        # label = occ_3d_gt[idx[0],idx[1],idx[2]]
+        # occ_3d = torch.stack([idx[0],idx[1],idx[2],label],dim=1).float()
+        # occ_3d = occ_3d.long()
         
         occ_200[:,3][occ_200[:,3]==0]=255
         occ_200 = torch.from_numpy(occ_200)
         results['occ_200'] = occ_200
-        results['occ_3d'] = occ_3d
+        # results['occ_3d'] = occ_3d
         
         return results
         

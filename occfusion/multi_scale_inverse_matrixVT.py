@@ -209,7 +209,7 @@ class MultiScaleInverseMatrixVT(BaseModule):
             else:
                 xyz_volume = self.refines[i](merged_xyz_feats[i-1] + self.up_samples[i](xyz_volumes[-1]))
             xyz_volumes.append(xyz_volume)
-        
+
         return xyz_volumes[::-1]
     
     
@@ -317,7 +317,7 @@ class SingleScaleInverseMatrixVT(BaseModule):
     @torch.no_grad()
     def get_vt_matrix(self, img_feats, img_metas):
         batch_vt = multi_apply(self._get_vt_matrix_single,img_feats,img_metas)
-        res = tuple(torch.cat(vt) for vt in batch_vt)
+        res = tuple(torch.stack(vt) for vt in batch_vt)
         return res
     
     @autocast('cuda',torch.float32)
@@ -398,30 +398,43 @@ class SingleScaleInverseMatrixVT(BaseModule):
             div_xyz = self.fix_param['div_xyz'].to(img_feats.device)
             div_xy = self.fix_param['div_xy'].to(img_feats.device)
             valid_nc = self.fix_param['valid_nc'].to(img_feats.device)
+            valid_nc = valid_nc.unsqueeze(0).repeat(B, 1)
         else:
-            vt_xyz, vt_xy, div_xyz, div_xy, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+            vt_xyzs, vt_xys, div_xyzs, div_xys, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+        
+        valid_nc = valid_nc.unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
+        img_feats = torch.gather(img_feats, 1, valid_nc)
+        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(B, C, -1)
+        
+        cam_xyz_feats, cam_xy_feats = [], []
+        for idx in range(img_feats.shape[0]):
+            img_feat = img_feats[idx]
+            if not self.enable_fix:
+                vt_xyz = vt_xyzs[idx]
+                vt_xy = vt_xys[idx]
+                div_xyz = div_xyzs[idx]
+                div_xy = div_xys[idx]
             vt_xyz = vt_xyz.to_sparse_csr()
             vt_xy = vt_xy.to_sparse_csr()
+            cam_xyz = torch.sparse.mm(img_feat,vt_xyz) / div_xyz
+            cam_xyz_feat = cam_xyz.view(C, X, Y, Z)
+            cam_xy = torch.sparse.mm(img_feat,vt_xy) / div_xy
+            cam_xy_feat = cam_xy.view(C, X, Y)
+            cam_xyz_feats.append(cam_xyz_feat)
+            cam_xy_feats.append(cam_xy_feat)
         
-        valid_nc = valid_nc.unsqueeze(0).unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
-        img_feats = torch.gather(img_feats, 1, valid_nc)
-        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(C, -1)
-        
-        cam_xyz = torch.sparse.mm(img_feats,vt_xyz) / div_xyz
-        cam_xyz_feat = cam_xyz.view(B, C, X, Y, Z)
-        cam_xy = torch.sparse.mm(img_feats,vt_xy) / div_xy
-        cam_xy_feat = cam_xy.view(B, C, X, Y)
-        
-        cam_xyz_feat = self.down_conv3d(cam_xyz_feat)
-        cam_xy_feat = self.xy_conv(cam_xy_feat)
+        cam_xyz_feats = torch.stack(cam_xyz_feats)
+        cam_xy_feats = torch.stack(cam_xy_feats)
+        cam_xyz_feats = self.down_conv3d(cam_xyz_feats)
+        cam_xy_feats = self.xy_conv(cam_xy_feats)
                 
         # Apply ASPP on final 3D volume BEV slice
-        cam_bev = self.bev_attn_layer(cam_xy_feat)
-        cam_bev = self.aspp_xy(cam_bev)
-        coeff = self.combine_coeff(cam_xyz_feat).sigmoid()
-        cam_xyz_feat = cam_xyz_feat + coeff * cam_bev.unsqueeze(-1)
+        cam_bevs = self.bev_attn_layer(cam_xy_feats)
+        cam_bevs = self.aspp_xy(cam_bevs)
+        coeff = self.combine_coeff(cam_xyz_feats).sigmoid()
+        cam_xyz_feats = cam_xyz_feats + coeff * cam_bevs.unsqueeze(-1)
         
-        return cam_xyz_feat
+        return cam_xyz_feats
     
     @autocast('cuda',torch.float32)
     def forward_two(self, 
@@ -438,27 +451,40 @@ class SingleScaleInverseMatrixVT(BaseModule):
             div_xyz = self.fix_param['div_xyz'].to(img_feats.device)
             div_xy = self.fix_param['div_xy'].to(img_feats.device)
             valid_nc = self.fix_param['valid_nc'].to(img_feats.device)
+            valid_nc = valid_nc.unsqueeze(0).repeat(B, 1)
         else:
-            vt_xyz, vt_xy, div_xyz, div_xy, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+            vt_xyzs, vt_xys, div_xyzs, div_xys, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+        
+        valid_nc = valid_nc.unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
+        img_feats = torch.gather(img_feats, 1, valid_nc)
+        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(B, C, -1)
+        
+        cam_xyz_feats, cam_xy_feats = [], []
+        for idx in range(img_feats.shape[0]):
+            img_feat = img_feats[idx]
+            if not self.enable_fix:
+                vt_xyz = vt_xyzs[idx]
+                vt_xy = vt_xys[idx]
+                div_xyz = div_xyzs[idx]
+                div_xy = div_xys[idx]
             vt_xyz = vt_xyz.to_sparse_csr()
             vt_xy = vt_xy.to_sparse_csr()
+            cam_xyz = torch.sparse.mm(img_feat,vt_xyz) / div_xyz
+            cam_xyz_feat = cam_xyz.view(C, X, Y, Z)
+            cam_xy = torch.sparse.mm(img_feat,vt_xy) / div_xy
+            cam_xy_feat = cam_xy.view(C, X, Y)
+            cam_xyz_feats.append(cam_xyz_feat)
+            cam_xy_feats.append(cam_xy_feat)
         
-        valid_nc = valid_nc.unsqueeze(0).unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
-        img_feats = torch.gather(img_feats, 1, valid_nc)
-        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(C, -1)
+        cam_xyz_feats = torch.stack(cam_xyz_feats)
+        cam_xy_feats = torch.stack(cam_xy_feats)
+        cam_xyz_feats = self.down_conv3d(cam_xyz_feats)
+        cam_xy_feats = self.xy_conv(cam_xy_feats)
         
-        cam_xyz = torch.sparse.mm(img_feats,vt_xyz) / div_xyz
-        cam_xyz_feat = cam_xyz.view(B, C, X, Y, Z)
-        cam_xy = torch.sparse.mm(img_feats,vt_xy) / div_xy
-        cam_xy_feat = cam_xy.view(B, C, X, Y)
-        
-        cam_xyz_feat = self.down_conv3d(cam_xyz_feat)
-        cam_xy_feat = self.xy_conv(cam_xy_feat)
-        
-        merged_xyz_feat = torch.cat([cam_xyz_feat,lidar_xyz_feat],dim=1)
+        merged_xyz_feat = torch.cat([cam_xyz_feats,lidar_xyz_feat],dim=1)
         merged_xyz_feat = self.xyz_fusion(merged_xyz_feat)
         
-        merged_xy_feat = torch.cat([cam_xy_feat,lidar_xy_feat],dim=1)
+        merged_xy_feat = torch.cat([cam_xy_feats,lidar_xy_feat],dim=1)
         merged_xy_feat = self.xy_fusion(merged_xy_feat)
         
         # Apply ASPP on final 3D volume BEV slice
@@ -486,27 +512,41 @@ class SingleScaleInverseMatrixVT(BaseModule):
             div_xyz = self.fix_param['div_xyz'].to(img_feats.device)
             div_xy = self.fix_param['div_xy'].to(img_feats.device)
             valid_nc = self.fix_param['valid_nc'].to(img_feats.device)
+            valid_nc = valid_nc.unsqueeze(0).repeat(B, 1)
         else:
-            vt_xyz, vt_xy, div_xyz, div_xy, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+            vt_xyzs, vt_xys, div_xyzs, div_xys, valid_nc = self.get_vt_matrix(img_feats, img_metas)
+
+        
+        valid_nc = valid_nc.unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
+        img_feats = torch.gather(img_feats, 1, valid_nc)
+        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(B, C, -1)
+        
+        cam_xyz_feats, cam_xy_feats = [], []
+        for idx in range(img_feats.shape[0]):
+            img_feat = img_feats[idx]
+            if not self.enable_fix:
+                vt_xyz = vt_xyzs[idx]
+                vt_xy = vt_xys[idx]
+                div_xyz = div_xyzs[idx]
+                div_xy = div_xys[idx]
             vt_xyz = vt_xyz.to_sparse_csr()
             vt_xy = vt_xy.to_sparse_csr()
+            cam_xyz = torch.sparse.mm(img_feat,vt_xyz) / div_xyz
+            cam_xyz_feat = cam_xyz.view(C, X, Y, Z)
+            cam_xy = torch.sparse.mm(img_feat,vt_xy) / div_xy
+            cam_xy_feat = cam_xy.view(C, X, Y)
+            cam_xyz_feats.append(cam_xyz_feat)
+            cam_xy_feats.append(cam_xy_feat)
         
-        valid_nc = valid_nc.unsqueeze(0).unsqueeze(2).unsqueeze(3).unsqueeze(4).expand(-1, -1, C, H, W)
-        img_feats = torch.gather(img_feats, 1, valid_nc)
-        img_feats = img_feats.permute(0, 2, 1, 3, 4).reshape(C, -1)
+        cam_xyz_feats = torch.stack(cam_xyz_feats)
+        cam_xy_feats = torch.stack(cam_xy_feats)
+        cam_xyz_feats = self.down_conv3d(cam_xyz_feats)
+        cam_xy_feats = self.xy_conv(cam_xy_feats)
         
-        cam_xyz = torch.sparse.mm(img_feats,vt_xyz) / div_xyz
-        cam_xyz_feat = cam_xyz.view(B, C, X, Y, Z)
-        cam_xy = torch.sparse.mm(img_feats,vt_xy) / div_xy
-        cam_xy_feat = cam_xy.view(B, C, X, Y)
-        
-        cam_xyz_feat = self.down_conv3d(cam_xyz_feat)
-        cam_xy_feat = self.xy_conv(cam_xy_feat)
-        
-        merged_xyz_feat = torch.cat([cam_xyz_feat,lidar_xyz_feat,radar_xyz_feat],dim=1)
+        merged_xyz_feat = torch.cat([cam_xyz_feats,lidar_xyz_feat,radar_xyz_feat],dim=1)
         merged_xyz_feat = self.xyz_fusion(merged_xyz_feat)
         
-        merged_xy_feat = torch.cat([cam_xy_feat,lidar_xy_feat,radar_xy_feat],dim=1)
+        merged_xy_feat = torch.cat([cam_xy_feats,lidar_xy_feat,radar_xy_feat],dim=1)
         merged_xy_feat = self.xy_fusion(merged_xy_feat)
         
         # Apply ASPP on final 3D volume BEV slice

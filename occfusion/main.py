@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from focal_loss.focal_loss import FocalLoss
 from pytorch_loss import LovaszSoftmaxV3
 from .loss import geo_scal_loss, sem_scal_loss
+import time
 
 @MODELS.register_module()
 class OccFusion(Base3DSegmentor):
@@ -189,11 +190,12 @@ class OccFusion(Base3DSegmentor):
     
     def predict(self, batch_inputs,batch_data_samples):
         """Forward predict function."""
-        occ_ori_logit = self._forward(batch_inputs,batch_data_samples)
-        B,X,Y,Z,Cls = occ_ori_logit.shape
-        occ_predict = occ_ori_logit.softmax(dim=-1)
-        occ_predict = torch.argmax(occ_predict, dim=-1)
-        occ_predict = occ_predict.squeeze(0).cpu().numpy()
+        occ_ori_logits = self._forward(batch_inputs,batch_data_samples)
+        B,X,Y,Z,Cls = occ_ori_logits.shape
+        # occ_ori_logits = occ_ori_logits[:,49:149,49:149,:,:] # 25m
+        # occ_predict = occ_ori_logits.softmax(dim=-1)
+        # occ_predict = torch.argmax(occ_predict, dim=-1)
+        # occ_predict = occ_predict.squeeze(0).cpu().numpy()
         
         # save_folder = './predict'
         # if not os.path.exists(save_folder):
@@ -209,7 +211,7 @@ class OccFusion(Base3DSegmentor):
                                                     self.pts_grid_set['grid_size'][2] * 2
                                                     ],
                                                 dtype=torch.long,
-                                                device=occ_ori_logit.device)
+                                                device=occ_ori_logits.device)
                 
                 for i, occ in enumerate(batch_inputs['dense_occ_200']):
                     voxel_occupy_labels_200[i, occ[:,0], occ[:,1], occ[:,2]] = occ[:,3]
@@ -225,7 +227,7 @@ class OccFusion(Base3DSegmentor):
                                                     self.pts_grid_set['grid_size'][2] * 2
                                                     ],
                                                 dtype=torch.long,
-                                                device=occ_ori_logit.device)
+                                                device=occ_ori_logits.device)
                 
                 for i, occ in enumerate(batch_inputs['dense_occ_3d']):
                     voxel_occupy_labels_200[i, occ[:,0], occ[:,1], occ[:,2]] = occ[:,3]
@@ -237,6 +239,7 @@ class OccFusion(Base3DSegmentor):
         elif X == 200:
             if not self.occ3d:
                 voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+                # voxels_lvl0 = voxels_lvl0[:,49:149,49:149,:] # 25m
                 voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
             else:
                 voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
@@ -245,7 +248,7 @@ class OccFusion(Base3DSegmentor):
         for i, data_sample in enumerate(batch_data_samples):
             data_sample.eval_ann_info['pts_semantic_mask'] = voxels_lvl0[i].cpu().numpy().astype(np.uint8) # voxels_256
 
-        final_vox_logits = [occ_ori_logit.reshape(-1,17)]
+        final_vox_logits = [occ_ori_logit.reshape(-1,Cls) for occ_ori_logit in occ_ori_logits]
         return self.postprocess_result(final_vox_logits, batch_data_samples)
     
     def postprocess_result(self, voxel_logits, batch_data_samples):
