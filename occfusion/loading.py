@@ -53,22 +53,24 @@ class BEVLoadMultiViewImageFromFiles(LoadMultiViewImageFromFiles):
                 - scale_factor (float): Scale factor.
                 - img_norm_cfg (dict): Normalization configuration of images.
         """
-        filename, cam2img, lidar2cam, lidar2img = [], [], [], []
+        filename, cam2img, lidar2cam, lidar2img, ego2img = [], [], [], [], []
         for _, cam_item in results['images'].items():
             filename.append(cam_item['img_path'])
             lidar2cam.append(cam_item['lidar2cam'])
-
+            
+            ego2cam_array = np.linalg.inv(np.array(cam_item['cam2ego'],dtype=np.float64))
             lidar2cam_array = np.array(cam_item['lidar2cam'],dtype=np.float64)
             cam2img_array = np.eye(4).astype(np.float64)
             cam2img_array[:3, :3] = np.array(cam_item['cam2img'],dtype=np.float64)
             cam2img.append(cam2img_array)
             lidar2img.append(cam2img_array @ lidar2cam_array)
+            ego2img.append(cam2img_array @ ego2cam_array)
 
         results['img_path'] = filename
         results['cam2img'] = np.stack(cam2img, axis=0)
         results['lidar2cam'] = np.stack(lidar2cam, axis=0)
         results['lidar2img'] = np.stack(lidar2img, axis=0)
-
+        results['ego2img'] = np.stack(ego2img, axis=0)
         results['ori_cam2img'] = copy.deepcopy(results['cam2img'])
 
         # img is of shape (h, w, c, num_views)
@@ -175,35 +177,68 @@ class SegLabelMapping(BaseTransform):
         repr_str = self.__class__.__name__
         return repr_str
 
+
 @TRANSFORMS.register_module()
 class LoadOccupancy(BaseTransform):
-    
+    def __init__(self,
+                use_occ3d=False,
+                pc_range=None):
+       self.use_occ3d = use_occ3d
+       self.pc_range = pc_range
+       
     def transform(self, results: dict) -> dict:
-        occ_file_name = results['lidar_points']['lidar_path'].split('/')[-1] + '.npy'
-        occ_200_folder = results['lidar_points']['lidar_path'].split('samples')[0] + 'occ_samples'
-        # occ_3d_folder = results['lidar_points']['lidar_path'].split('samples')[0] + 'Occ3D'
-        occ_200_path = os.path.join(occ_200_folder, occ_file_name)
-        # occ_3d_path = os.path.join(occ_3d_folder, results['token'], 'labels.npz')
-        occ_200 = np.load(occ_200_path)
-        # occ_3d = np.load(occ_3d_path)
-        # occ_3d_semantic = occ_3d['semantics']
-        # occ_3d_cam_mask = occ_3d['mask_camera']
-        # occ_3d_semantic[occ_3d_semantic==0]=18
-        # occ_3d_gt = occ_3d_semantic * occ_3d_cam_mask
-        # occ_3d_gt[occ_3d_gt==0]=255
-        # occ_3d_gt[occ_3d_gt==17]=0
-        # occ_3d_gt[occ_3d_gt==18]=17
-        # occ_3d_gt = torch.from_numpy(occ_3d_gt)
-        # idx = torch.where(occ_3d_gt > 0)
-        # label = occ_3d_gt[idx[0],idx[1],idx[2]]
-        # occ_3d = torch.stack([idx[0],idx[1],idx[2],label],dim=1).float()
-        # occ_3d = occ_3d.long()
         
-        occ_200[:,3][occ_200[:,3]==0]=255
-        occ_200 = torch.from_numpy(occ_200)
-        results['occ_200'] = occ_200
-        # results['occ_3d'] = occ_3d
-        
+        if self.use_occ3d:
+            lidar2ego_rotation = np.array(results['lidar_points']['lidar2ego'])[:3,:3]
+            lidar2ego_translation = np.array(results['lidar_points']['lidar2ego'])[:3,-1]
+            points = results['points'].numpy()
+            points[:,:3] = points[:,:3] @ lidar2ego_rotation.T
+            points[:,:3] += lidar2ego_translation
+            points = torch.from_numpy(points)
+            idx = torch.where((points[:,0] > self.pc_range[0])
+                            & (points[:,1] > self.pc_range[1])
+                            & (points[:,2] > self.pc_range[2])
+                            & (points[:,0] < self.pc_range[3])
+                            & (points[:,1] < self.pc_range[4])
+                            & (points[:,2] < self.pc_range[5]))
+            points = points[idx]
+            results['points'] = points
+            
+            occ_3d_folder = results['lidar_points']['lidar_path'].split('samples')[0] + 'Occ3D'
+            occ_3d_path = os.path.join(occ_3d_folder, results['token'], 'labels.npz')
+            occ_3d = np.load(occ_3d_path)
+            occ_3d_semantic = occ_3d['semantics']
+            occ_3d_cam_mask = occ_3d['mask_camera']
+            occ_3d_semantic[occ_3d_semantic==0]=18 # Direct changed occ_3d_semantic contained
+            occ_3d_gt_masked = occ_3d_semantic * occ_3d_cam_mask
+            occ_3d_gt_masked[occ_3d_gt_masked==0]=255
+            occ_3d_gt_masked[occ_3d_gt_masked==17]=0
+            occ_3d_gt_masked[occ_3d_gt_masked==18]=17
+            
+            occ_3d_gt_masked = torch.from_numpy(occ_3d_gt_masked)
+            idx_masked = torch.where(occ_3d_gt_masked > 0)
+            label_masked = occ_3d_gt_masked[idx_masked[0],idx_masked[1],idx_masked[2]]
+            occ_3d_masked = torch.stack([idx_masked[0],idx_masked[1],idx_masked[2],label_masked],dim=1).long()
+            
+            occ_3d_semantic[occ_3d_semantic==17]=0
+            occ_3d_semantic[occ_3d_semantic==18]=17
+            occ_3d_gt = torch.from_numpy(occ_3d_semantic)
+            idx = torch.where(occ_3d_gt > 0)
+            label = occ_3d_gt[idx[0],idx[1],idx[2]]
+            occ3d = torch.stack([idx[0],idx[1],idx[2],label],dim=1).long()
+            
+            results['occ_3d_masked'] = occ_3d_masked
+            results['occ_3d'] = occ3d
+            
+        else:
+            occ_file_name = results['lidar_points']['lidar_path'].split('/')[-1] + '.npy'
+            occ_200_folder = results['lidar_points']['lidar_path'].split('samples')[0] + 'occ_samples'
+            occ_200_path = os.path.join(occ_200_folder, occ_file_name)
+            occ_200 = np.load(occ_200_path)
+            occ_200[:,3][occ_200[:,3]==0]=255
+            occ_200 = torch.from_numpy(occ_200)
+            results['occ_200'] = occ_200
+            
         return results
         
     def __repr__(self) -> str:
@@ -223,10 +258,12 @@ class LoadRadarPointsMultiSweeps(BaseTransform):
 
 
    def __init__(self,
+                use_occ3d=False,
                 load_dim=18,
                 use_dim=[0, 1, 2, 8, 9, 18],
                 sweeps_num=5,
                 pc_range=[-50.0, -50.0, -5.0, 50.0, 50.0, 3.0]):
+       self.use_occ3d = use_occ3d
        self.load_dim = load_dim
        self.use_dim = use_dim
        self.sweeps_num = sweeps_num
@@ -263,8 +300,8 @@ class LoadRadarPointsMultiSweeps(BaseTransform):
                    cloud arrays.
        """
        radars_dict = results['radars']
-
-
+       lidar2ego_rotation = np.array(results['lidar_points']['lidar2ego'])[:3,:3]
+       lidar2ego_translation = np.array(results['lidar_points']['lidar2ego'])[:3,-1]
        points_sweep_list = []
        for key, sweeps in radars_dict.items():
            if len(sweeps) < self.sweeps_num:
@@ -288,24 +325,27 @@ class LoadRadarPointsMultiSweeps(BaseTransform):
 
                # velocity compensated by the ego motion in sensor frame
                velo_comp = points_sweep[:, 8:10]
-               velo_comp = np.concatenate(
-                   (velo_comp, np.zeros((velo_comp.shape[0], 1))), 1)
+               velo_comp = np.concatenate((velo_comp, np.zeros((velo_comp.shape[0], 1))), 1)
                velo_comp = velo_comp @ sweep['sensor2lidar_rotation'].T
+               if self.use_occ3d:
+                   velo_comp = velo_comp @ lidar2ego_rotation.T
                velo_comp = velo_comp[:, :2]
 
 
                # velocity in sensor frame
                velo = points_sweep[:, 6:8]
-               velo = np.concatenate(
-                   (velo, np.zeros((velo.shape[0], 1))), 1)
+               velo = np.concatenate((velo, np.zeros((velo.shape[0], 1))), 1)
                velo = velo @ sweep['sensor2lidar_rotation'].T
+               if self.use_occ3d:
+                   velo = velo @ lidar2ego_rotation.T
                velo = velo[:, :2]
 
 
-               points_sweep[:, :3] = points_sweep[:, :3] @ sweep[
-                   'sensor2lidar_rotation'].T
+               points_sweep[:, :3] = points_sweep[:, :3] @ sweep['sensor2lidar_rotation'].T
                points_sweep[:, :3] += sweep['sensor2lidar_translation']
-
+               if self.use_occ3d:
+                   points_sweep[:, :3] = points_sweep[:, :3] @ lidar2ego_rotation.T
+                   points_sweep[:, :3] += lidar2ego_translation
 
                points_sweep_ = np.concatenate(
                    [points_sweep[:, :6], velo,

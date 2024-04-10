@@ -47,7 +47,7 @@ def to_tensor(
 
 @TRANSFORMS.register_module()
 class Custom3DPack(BaseTransform):
-    INPUTS_KEYS = ['points', 'radars', 'img', 'occ_200', 'occ_3d']
+    INPUTS_KEYS = ['points', 'radars', 'img', 'occ_200', 'occ_3d', 'occ_3d_masked']
     INSTANCEDATA_3D_KEYS = [
         'gt_bboxes_3d', 'gt_labels_3d', 'attr_labels', 'depths', 'centers_2d'
     ]
@@ -65,7 +65,7 @@ class Custom3DPack(BaseTransform):
         self,
         keys: tuple,
         meta_keys: tuple = ('img_path', 'ori_shape', 'img_shape', 'lidar2img',
-                            'depth2img', 'cam2img', 'pad_shape',
+                            'depth2img', 'cam2img', 'pad_shape','ego2img',
                             'scale_factor', 'flip', 'pcd_horizontal_flip',
                             'pcd_vertical_flip', 'box_mode_3d', 'box_type_3d',
                             'img_norm_cfg', 'num_pts_feats', 'pcd_trans',

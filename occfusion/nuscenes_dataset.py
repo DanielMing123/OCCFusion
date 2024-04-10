@@ -64,7 +64,24 @@ class NuScenesSegDataset(BaseDataset):
                  ann_file: str,
                  pipeline: List[Union[dict, Callable]] = [],
                  test_mode: bool = False,
+                 use_occ3d=False,
                  **kwargs) -> None:
+        self.use_occ3d = use_occ3d
+        if self.use_occ3d:
+            self.METAINFO = {
+                'classes':
+                    ('empty', 'barrier', 'bicycle', 'bus', 'car', 'construction_vehicle',
+                    'motorcycle', 'pedestrian', 'traffic_cone', 'trailer', 'truck',
+                    'driveable_surface', 'other_flat', 'sidewalk', 'terrain', 'manmade',
+                    'vegetation','others'),
+                'ignore_index': 255,
+                'label_mapping':
+                dict([(1, 17), (5, 17), (7, 17), (8, 17), (10, 17), (11, 17), (13, 17),
+                    (19, 17), (20, 17), (0, 17), (29, 17), (31, 17), (9, 1), (14, 2),
+                    (15, 3), (16, 3), (17, 4), (18, 5), (21, 6), (2, 7), (3, 7),
+                    (4, 7), (6, 7), (12, 8), (22, 9), (23, 10), (24, 11), (25, 12),
+                    (26, 13), (27, 14), (28, 15), (30, 16)])
+                }
         metainfo = dict(label2cat={
             i: cat_name
             for i, cat_name in enumerate(self.METAINFO['classes'])

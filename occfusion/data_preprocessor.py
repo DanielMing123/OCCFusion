@@ -17,7 +17,7 @@ from mmdet3d.structures.det3d_data_sample import SampleList
 
 @MODELS.register_module()
 class OccFusionDataPreprocessor(Det3DDataPreprocessor):
-
+    
     def simple_process(self, data: dict, training: bool = False) -> dict:
         """Perform normalization, padding and bgr2rgb conversion for img data
         based on ``BaseDataPreprocessor``, and voxelize point cloud if `voxel`
@@ -98,8 +98,11 @@ class OccFusionDataPreprocessor(Det3DDataPreprocessor):
             batch_inputs['dense_occ_200'] = data['inputs']['occ_200']
 
         if 'occ_3d' in data['inputs']:
-            batch_inputs['dense_occ_3d'] = data['inputs']['occ_3d']
+            batch_inputs['occ_3d'] = data['inputs']['occ_3d']
             
+        if 'occ_3d_masked' in data['inputs']:
+            batch_inputs['occ_3d_masked'] = data['inputs']['occ_3d_masked']
+        
         if 'imgs' in inputs:
             imgs = inputs['imgs']
 

@@ -13,7 +13,6 @@ import time
 @MODELS.register_module()
 class OccFusion(Base3DSegmentor):
     def __init__(self,
-                 pts_grid_set,
                  use_occ3d,
                  use_lidar,
                  use_radar,
@@ -36,7 +35,6 @@ class OccFusion(Base3DSegmentor):
             self.svfe_radar = MODELS.build(svfe_radar)
         self.view_transformer = MODELS.build(view_transformer)
         self.occ_head = MODELS.build(occ_head)
-        self.pts_grid_set = pts_grid_set
         self.loss_fl = FocalLoss(gamma=2,ignore_index=255) # 0: noise label weights=
         self.loss_lovasz = LovaszSoftmaxV3(ignore_index=255)
 
@@ -72,9 +70,14 @@ class OccFusion(Base3DSegmentor):
         imgs = batch_inputs['imgs']
         img_metas = []
         for data_sample in batch_data_samples:
-            img_meta = dict(lidar2img=data_sample.lidar2img,
-                            img_shape=torch.Tensor([900,1600])
-                            )
+            if not self.occ3d:
+                img_meta = dict(lidar2img=data_sample.lidar2img,
+                                img_shape=torch.Tensor([imgs.shape[-2],imgs.shape[-1]])
+                                )
+            else:
+                img_meta = dict(lidar2img=data_sample.ego2img,
+                                img_shape=torch.Tensor([imgs.shape[-2],imgs.shape[-1]])
+                                )
             img_metas.append(img_meta)
         
         img_feats = self.extract_feat(imgs)
@@ -95,55 +98,16 @@ class OccFusion(Base3DSegmentor):
     def loss(self,batch_inputs, batch_data_samples):
         vox_logits_lvl0, vox_logits_lvl1,vox_logits_lvl2,vox_logits_lvl3 = self._forward(batch_inputs,batch_data_samples)
         B,X,Y,Z,Cls = vox_logits_lvl0.shape
-        if X == 256:
-            if not self.occ3d:
-                voxel_occupy_labels_200 = torch.zeros([len(batch_inputs['dense_occ_200']),
-                                                    self.pts_grid_set['grid_size'][0] * 2,
-                                                    self.pts_grid_set['grid_size'][1] * 2,
-                                                    self.pts_grid_set['grid_size'][2] * 2
-                                                    ],
-                                                dtype=torch.long,
-                                                device=vox_logits_lvl0.device)
-                
-                for i, occ in enumerate(batch_inputs['dense_occ_200']):
-                    voxel_occupy_labels_200[i, occ[:,0], occ[:,1], occ[:,2]] = occ[:,3]
-                    
-                voxel_occupy_labels_200 = voxel_occupy_labels_200.unsqueeze(1).float()
-                voxels_lvl0 =F.interpolate(voxel_occupy_labels_200,size=(256,256,32))
-                voxels_lvl0 = voxels_lvl0.squeeze(1).round().long()
-                voxels_lvl1 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1.5625,1.5625,1],np.array([len(batch_data_samples),128,128,16],dtype=np.int32))
-                voxels_lvl2 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[3.125,3.125,2],np.array([len(batch_data_samples),64,64,8],dtype=np.int32))
-                voxels_lvl3 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[6.25,6.25,4],np.array([len(batch_data_samples),32,32,4],dtype=np.int32))
-            else:
-                voxel_occupy_labels_200 = torch.zeros([len(batch_inputs['dense_occ_3d']),
-                                                    self.pts_grid_set['grid_size'][0] * 2,
-                                                    self.pts_grid_set['grid_size'][1] * 2,
-                                                    self.pts_grid_set['grid_size'][2] * 2
-                                                    ],
-                                                dtype=torch.long,
-                                                device=vox_logits_lvl0.device)
-                
-                for i, occ in enumerate(batch_inputs['dense_occ_3d']):
-                    voxel_occupy_labels_200[i, occ[:,0], occ[:,1], occ[:,2]] = occ[:,3]
-                    
-                voxel_occupy_labels_200 = voxel_occupy_labels_200.unsqueeze(1).float()
-                voxels_lvl0 =F.interpolate(voxel_occupy_labels_200,size=(256,256,32))
-                voxels_lvl0 = voxels_lvl0.squeeze(1).round().long()
-                voxels_lvl1 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[1.5625,1.5625,1],np.array([len(batch_data_samples),128,128,16],dtype=np.int32))
-                voxels_lvl2 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[3.125,3.125,2],np.array([len(batch_data_samples),64,64,8],dtype=np.int32))
-                voxels_lvl3 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[6.25,6.25,4],np.array([len(batch_data_samples),32,32,4],dtype=np.int32))
-            
-        elif X == 200:
-            if not self.occ3d:
-                voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
-                voxels_lvl1 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[2,2,2],np.array([len(batch_data_samples),100,100,8],dtype=np.int32))
-                voxels_lvl2 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[4,4,4],np.array([len(batch_data_samples),50,50,4],dtype=np.int32))
-                voxels_lvl3 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[8,8,8],np.array([len(batch_data_samples),25,25,2],dtype=np.int32))
-            else:
-                voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
-                voxels_lvl1 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[2,2,2],np.array([len(batch_data_samples),100,100,8],dtype=np.int32))
-                voxels_lvl2 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[4,4,4],np.array([len(batch_data_samples),50,50,4],dtype=np.int32))
-                voxels_lvl3 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[8,8,8],np.array([len(batch_data_samples),25,25,2],dtype=np.int32))
+        if not self.occ3d:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+            voxels_lvl1 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[2,2,2],np.array([len(batch_data_samples),100,100,8],dtype=np.int32))
+            voxels_lvl2 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[4,4,4],np.array([len(batch_data_samples),50,50,4],dtype=np.int32))
+            voxels_lvl3 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[8,8,8],np.array([len(batch_data_samples),25,25,2],dtype=np.int32))
+        else:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+            voxels_lvl1 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[2,2,2],np.array([len(batch_data_samples),100,100,8],dtype=np.int32))
+            voxels_lvl2 = self.multiscale_supervision(batch_inputs['occ_3d'],[4,4,4],np.array([len(batch_data_samples),50,50,4],dtype=np.int32))
+            voxels_lvl3 = self.multiscale_supervision(batch_inputs['occ_3d'],[8,8,8],np.array([len(batch_data_samples),25,25,2],dtype=np.int32))
             
         vox_fl_predict_lvl0 = vox_logits_lvl0.reshape(B,-1,Cls).softmax(dim=-1) # [Bs,Num,Cls]
         vox_fl_label_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1) # [Bs,Num] 
@@ -203,47 +167,14 @@ class OccFusion(Base3DSegmentor):
         # num = len(os.listdir(save_folder))
         # save_path = os.path.join(save_folder,f'{num}.npy')
         # np.save(save_path, occ_predict)
-        if X == 256:
-            if not self.occ3d:
-                voxel_occupy_labels_200 = 17 * torch.ones([len(batch_inputs['dense_occ_200']),
-                                                    self.pts_grid_set['grid_size'][0] * 2,
-                                                    self.pts_grid_set['grid_size'][1] * 2,
-                                                    self.pts_grid_set['grid_size'][2] * 2
-                                                    ],
-                                                dtype=torch.long,
-                                                device=occ_ori_logits.device)
-                
-                for i, occ in enumerate(batch_inputs['dense_occ_200']):
-                    voxel_occupy_labels_200[i, occ[:,0], occ[:,1], occ[:,2]] = occ[:,3]
-                    
-                voxel_occupy_labels_200 = voxel_occupy_labels_200.unsqueeze(1).float()
-                voxels_lvl0 =F.interpolate(voxel_occupy_labels_200,size=(256,256,32))
-                voxels_lvl0 = voxels_lvl0.squeeze(1).round().long()
-                voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
-            else:
-                voxel_occupy_labels_200 = torch.zeros([len(batch_inputs['dense_occ_3d']),
-                                                    self.pts_grid_set['grid_size'][0] * 2,
-                                                    self.pts_grid_set['grid_size'][1] * 2,
-                                                    self.pts_grid_set['grid_size'][2] * 2
-                                                    ],
-                                                dtype=torch.long,
-                                                device=occ_ori_logits.device)
-                
-                for i, occ in enumerate(batch_inputs['dense_occ_3d']):
-                    voxel_occupy_labels_200[i, occ[:,0], occ[:,1], occ[:,2]] = occ[:,3]
-                    
-                voxel_occupy_labels_200 = voxel_occupy_labels_200.unsqueeze(1).float()
-                voxels_lvl0 =F.interpolate(voxel_occupy_labels_200,size=(256,256,32))
-                voxels_lvl0 = voxels_lvl0.squeeze(1).round().long()
-                voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
-        elif X == 200:
-            if not self.occ3d:
-                voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
-                # voxels_lvl0 = voxels_lvl0[:,49:149,49:149,:] # 25m
-                voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
-            else:
-                voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_3d'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
-                voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
+        
+        if not self.occ3d:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+            # voxels_lvl0 = voxels_lvl0[:,49:149,49:149,:] # 25m
+            voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
+        else:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+            voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
             
         for i, data_sample in enumerate(batch_data_samples):
             data_sample.eval_ann_info['pts_semantic_mask'] = voxels_lvl0[i].cpu().numpy().astype(np.uint8) # voxels_256

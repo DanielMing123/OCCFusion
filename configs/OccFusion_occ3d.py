@@ -19,13 +19,13 @@ data_prefix = dict(
 input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
 
-point_cloud_range = [-50.0, -50.0, -5.0, 50.0, 50.0, 3.0]
+point_cloud_range = [-40.0, -40.0, -1.0, 40.0, 40.0, 5.4]
 grid_size_vt = [100, 100, 8]
 num_points_per_voxel = 35
-nbr_class = 17
+nbr_class = 18
 use_lidar=True
-use_radar=True 
-use_occ3d=False
+use_radar=False 
+use_occ3d=True
 find_unused_parameters=True
 
 model = dict(
@@ -71,9 +71,9 @@ model = dict(
         grid_size=[[100, 100, 8],
                    [50, 50, 4],
                    [25, 25, 2]],
-        x_bound=[-50, 50],
-        y_bound=[-50, 50],
-        z_bound=[-5., 3.],
+        x_bound=[-40, 40],
+        y_bound=[-40, 40],
+        z_bound=[-1., 5.4],
         sampling_rate=[4,5,6],
         num_cams=[None,None,None],
         enable_fix=False,
@@ -112,7 +112,7 @@ train_pipeline = [
         load_dim=18,
         sweeps_num=6, # 6
         use_dim=[0, 1, 2, 8, 9, 18],
-        pc_range=point_cloud_range),
+        pc_range=point_cloud_range), # used to filter out some radar points
     dict(
         type='LoadPointsFromFile',
         coord_type='LIDAR',
@@ -127,8 +127,9 @@ train_pipeline = [
         pad_empty_sweeps=True,
         remove_close=True,
         backend_args=backend_args),
-    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='LoadOccupancy'),
+    dict(type='LoadOccupancy',
+         use_occ3d=use_occ3d,
+         pc_range=point_cloud_range), # used to filter out some lidar points
     dict(
         type='LoadAnnotations3D',
         with_bbox_3d=False,
@@ -142,8 +143,8 @@ train_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points','pts_semantic_mask','radars','occ_200'], 
-        meta_keys=['lidar2img'])
+        keys=['img', 'points','pts_semantic_mask','radars','occ_3d', 'occ_3d_masked'], 
+        meta_keys=['lidar2img','ego2img'])
 ]
 
 val_pipeline = [
@@ -159,7 +160,7 @@ val_pipeline = [
         load_dim=18,
         sweeps_num=6, # 6
         use_dim=[0, 1, 2, 8, 9, 18],
-        pc_range=point_cloud_range),
+        pc_range=point_cloud_range), # used to filter out some radar points
     dict(
         type='LoadPointsFromFile',
         coord_type='LIDAR',
@@ -174,8 +175,9 @@ val_pipeline = [
         pad_empty_sweeps=True,
         remove_close=True,
         backend_args=backend_args),
-    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='LoadOccupancy'),
+    dict(type='LoadOccupancy',
+         use_occ3d=use_occ3d,
+         pc_range=point_cloud_range), # used to filter out some lidar points
     dict(
         type='LoadAnnotations3D',
         with_bbox_3d=False,
@@ -186,8 +188,8 @@ val_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points','pts_semantic_mask','radars','occ_200'], 
-        meta_keys=['lidar2img'])
+        keys=['img', 'points','pts_semantic_mask','radars','occ_3d', 'occ_3d_masked'], 
+        meta_keys=['lidar2img','ego2img'])
 ]
 
 test_pipeline = val_pipeline
@@ -195,7 +197,7 @@ test_pipeline = val_pipeline
 
 
 train_dataloader = dict(
-    batch_size=3, # 4
+    batch_size=1, # 4
     num_workers=4,
     persistent_workers=True,
     drop_last=True,
@@ -206,7 +208,8 @@ train_dataloader = dict(
         data_prefix=data_prefix,
         ann_file='nuscenes_infos_occfusion_train.pkl',
         pipeline=train_pipeline,
-        test_mode=False))
+        test_mode=False,
+        use_occ3d=use_occ3d))
 
 val_dataloader = dict(
     batch_size=4,
@@ -220,10 +223,10 @@ val_dataloader = dict(
         data_prefix=data_prefix,
         ann_file='nuscenes_infos_occfusion_val.pkl',
         pipeline=val_pipeline,
-        test_mode=True)) # True
+        test_mode=True,
+        use_occ3d=use_occ3d)) # True
 
 test_dataloader = val_dataloader
-
 
 val_evaluator = dict(type='SegMetric')
 
