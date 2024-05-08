@@ -4,6 +4,7 @@ custom_imports = dict(imports=['occfusion'], allow_failed_imports=False)
 load_from = 'ckpt/r101_dcn_fcos3d_pretrain.pth'
 # load_from = 'ckpt/resnet50-0676ba61.pth'
 
+
 dataset_type = 'NuScenesSegDataset'
 data_root = 'data/nuscenes'
 data_prefix = dict(
@@ -24,7 +25,7 @@ grid_size_vt = [100, 100, 8]
 num_points_per_voxel = 35
 nbr_class = 17
 use_lidar=True
-use_radar=True 
+use_radar=False
 use_occ3d=False
 find_unused_parameters=True
 
@@ -195,7 +196,7 @@ test_pipeline = val_pipeline
 
 
 train_dataloader = dict(
-    batch_size=3, # 4
+    batch_size=4, # 4
     num_workers=4,
     persistent_workers=True,
     drop_last=True,
@@ -209,7 +210,7 @@ train_dataloader = dict(
         test_mode=False))
 
 val_dataloader = dict(
-    batch_size=4,
+    batch_size=1,
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
@@ -235,11 +236,11 @@ visualizer = dict(
 
 optim_wrapper = dict(
     type='OptimWrapper',
-    optimizer=dict(type='AdamW', lr=5e-5, weight_decay=0.01),
+    optimizer=dict(type='AdamW', lr=5e-5, weight_decay=0.01), # 5e-5 2e-4
     paramwise_cfg=dict(custom_keys={
         'backbone': dict(lr_mult=0.1),
     }),
-    clip_grad=dict(max_norm=35, norm_type=2),
+    clip_grad=dict(max_norm=5000, norm_type=2),
 )
 
 param_scheduler = [
@@ -253,7 +254,7 @@ param_scheduler = [
         convert_to_iter_based=True)
 ]
 
-train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=24,val_begin=1, val_interval=1)
+train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=1,val_begin=1, val_interval=1)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 

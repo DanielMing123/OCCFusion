@@ -24,9 +24,9 @@ grid_size_vt = [100, 100, 8]
 num_points_per_voxel = 35
 nbr_class = 18
 use_lidar=True
-use_radar=False 
+use_radar=True 
 use_occ3d=True
-find_unused_parameters=True
+find_unused_parameters=False
 
 model = dict(
     type='OccFusion',
@@ -197,7 +197,7 @@ test_pipeline = val_pipeline
 
 
 train_dataloader = dict(
-    batch_size=1, # 4
+    batch_size=3, # 4
     num_workers=4,
     persistent_workers=True,
     drop_last=True,

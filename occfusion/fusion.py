@@ -25,6 +25,7 @@ class DynamicFusion3D(BaseModule):
         
     def forward(self, x):
         x = self.refine(x)
+        # return x
         b, c, _, _, _ = x.size()
         y = self.global_avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1, 1)
@@ -51,6 +52,7 @@ class DynamicFusion2D(BaseModule):
         
     def forward(self, x):
         x = self.refine(x)
+        # return x
         b, c, _, _ = x.size()
         y = self.global_avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)

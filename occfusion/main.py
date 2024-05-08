@@ -5,10 +5,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 from focal_loss.focal_loss import FocalLoss
-from pytorch_loss import LovaszSoftmaxV3
+from mmdet3d.models.losses import LovaszLoss
 from .loss import geo_scal_loss, sem_scal_loss
-import time
+
 
 @MODELS.register_module()
 class OccFusion(Base3DSegmentor):
@@ -36,7 +37,9 @@ class OccFusion(Base3DSegmentor):
         self.view_transformer = MODELS.build(view_transformer)
         self.occ_head = MODELS.build(occ_head)
         self.loss_fl = FocalLoss(gamma=2,ignore_index=255) # 0: noise label weights=
-        self.loss_lovasz = LovaszSoftmaxV3(ignore_index=255)
+        self.loss_lovasz = LovaszLoss(loss_type='multi_class',
+                                      per_sample=False,
+                                      reduction='none')
 
     def multiscale_supervision(self, gt_occ, ratio, gt_shape):
         gt = torch.zeros([gt_shape[0], gt_shape[1], gt_shape[2], gt_shape[3]]).to(gt_occ[0].device).type(torch.long) 
@@ -88,7 +91,7 @@ class OccFusion(Base3DSegmentor):
         if (not self.use_lidar) and (not self.use_radar):
             xyz_volumes = self.view_transformer(img_feats, img_metas) # [B, C, X, Y, Z]
         elif self.use_lidar and (not self.use_radar):
-            xyz_volumes = self.view_transformer.forward_two(img_feats, img_metas, lidar_xyz_feat)
+            xyz_volumes = self.view_transformer.forward_two(img_feats, img_metas, lidar_xyz_feat) #  lidar_xyz_feat
         elif (not self.use_lidar) and self.use_radar:
             xyz_volumes = self.view_transformer.forward_two(img_feats, img_metas, radar_xyz_feat)
         elif self.use_lidar and self.use_radar:
@@ -97,17 +100,23 @@ class OccFusion(Base3DSegmentor):
              
     def loss(self,batch_inputs, batch_data_samples):
         vox_logits_lvl0, vox_logits_lvl1,vox_logits_lvl2,vox_logits_lvl3 = self._forward(batch_inputs,batch_data_samples)
+        # vox_logits_lvl0 = self._forward(batch_inputs,batch_data_samples)
         B,X,Y,Z,Cls = vox_logits_lvl0.shape
-        if not self.occ3d:
+        if X==256:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_semantickitti_masked'],[1,1,1],np.array([len(batch_data_samples),256,256,32],dtype=np.int32))
+            voxels_lvl1 = self.multiscale_supervision(batch_inputs['occ_semantickitti_masked'],[2,2,2],np.array([len(batch_data_samples),128,128,16],dtype=np.int32))
+            voxels_lvl2 = self.multiscale_supervision(batch_inputs['occ_semantickitti_masked'],[4,4,4],np.array([len(batch_data_samples),64,64,8],dtype=np.int32))
+            voxels_lvl3 = self.multiscale_supervision(batch_inputs['occ_semantickitti_masked'],[8,8,8],np.array([len(batch_data_samples),32,32,4],dtype=np.int32))
+        elif self.occ3d:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+            voxels_lvl1 = self.multiscale_supervision(batch_inputs['occ_3d'],[2,2,2],np.array([len(batch_data_samples),100,100,8],dtype=np.int32))
+            voxels_lvl2 = self.multiscale_supervision(batch_inputs['occ_3d'],[4,4,4],np.array([len(batch_data_samples),50,50,4],dtype=np.int32))
+            voxels_lvl3 = self.multiscale_supervision(batch_inputs['occ_3d'],[8,8,8],np.array([len(batch_data_samples),25,25,2],dtype=np.int32))
+        else:
             voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
             voxels_lvl1 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[2,2,2],np.array([len(batch_data_samples),100,100,8],dtype=np.int32))
             voxels_lvl2 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[4,4,4],np.array([len(batch_data_samples),50,50,4],dtype=np.int32))
             voxels_lvl3 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[8,8,8],np.array([len(batch_data_samples),25,25,2],dtype=np.int32))
-        else:
-            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
-            voxels_lvl1 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[2,2,2],np.array([len(batch_data_samples),100,100,8],dtype=np.int32))
-            voxels_lvl2 = self.multiscale_supervision(batch_inputs['occ_3d'],[4,4,4],np.array([len(batch_data_samples),50,50,4],dtype=np.int32))
-            voxels_lvl3 = self.multiscale_supervision(batch_inputs['occ_3d'],[8,8,8],np.array([len(batch_data_samples),25,25,2],dtype=np.int32))
             
         vox_fl_predict_lvl0 = vox_logits_lvl0.reshape(B,-1,Cls).softmax(dim=-1) # [Bs,Num,Cls]
         vox_fl_label_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1) # [Bs,Num] 
@@ -156,28 +165,31 @@ class OccFusion(Base3DSegmentor):
         """Forward predict function."""
         occ_ori_logits = self._forward(batch_inputs,batch_data_samples)
         B,X,Y,Z,Cls = occ_ori_logits.shape
-        # occ_ori_logits = occ_ori_logits[:,49:149,49:149,:,:] # 25m
-        # occ_predict = occ_ori_logits.softmax(dim=-1)
-        # occ_predict = torch.argmax(occ_predict, dim=-1)
-        # occ_predict = occ_predict.squeeze(0).cpu().numpy()
+        # occ_ori_logits = occ_ori_logits[:,39:159,39:159,:,:] # 30m
+        occ_predict = occ_ori_logits.softmax(dim=-1)
+        occ_predict = torch.argmax(occ_predict, dim=-1)
+        occ_predict = occ_predict.squeeze(0).cpu().numpy()
         
-        # save_folder = './predict'
-        # if not os.path.exists(save_folder):
-        #     os.mkdir(save_folder)
-        # num = len(os.listdir(save_folder))
-        # save_path = os.path.join(save_folder,f'{num}.npy')
-        # np.save(save_path, occ_predict)
+        save_folder = './predict'
+        if not os.path.exists(save_folder):
+            os.mkdir(save_folder)
+        num = len(os.listdir(save_folder))
+        save_path = os.path.join(save_folder,f'{num}.npy')
+        np.save(save_path, occ_predict)
         
-        if not self.occ3d:
-            voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
-            # voxels_lvl0 = voxels_lvl0[:,49:149,49:149,:] # 25m
+        if X==256:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_semantickitti_masked'],[1,1,1],np.array([len(batch_data_samples),256,256,32],dtype=np.int32))
+            voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
+        elif self.occ3d:
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
             voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
         else:
-            voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_3d_masked'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+            voxels_lvl0 = self.multiscale_supervision(batch_inputs['dense_occ_200'],[1,1,1],np.array([len(batch_data_samples),200,200,16],dtype=np.int32))
+            # voxels_lvl0 = voxels_lvl0[:,39:159,39:159,:] #30m
             voxels_lvl0 = voxels_lvl0.reshape(len(batch_data_samples),-1)
             
         for i, data_sample in enumerate(batch_data_samples):
-            data_sample.eval_ann_info['pts_semantic_mask'] = voxels_lvl0[i].cpu().numpy().astype(np.uint8) # voxels_256
+            data_sample.eval_ann_info['pts_semantic_mask'] = voxels_lvl0[i].cpu().numpy().astype(np.uint8)
 
         final_vox_logits = [occ_ori_logit.reshape(-1,Cls) for occ_ori_logit in occ_ori_logits]
         return self.postprocess_result(final_vox_logits, batch_data_samples)

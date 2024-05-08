@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import copy
-from typing import Optional, Union
-import cv2
+from typing import Optional
+import copy
 import mmcv
 import numpy as np
 import torch
@@ -11,7 +11,118 @@ from mmengine.fileio import get
 from mmdet3d.datasets.transforms import LoadMultiViewImageFromFiles, Pack3DDetInputs
 from mmdet3d.registry import TRANSFORMS
 from nuscenes.utils.data_classes import RadarPointCloud
+import pykitti.utils as utils
 
+@TRANSFORMS.register_module()
+class SemanticKITTI_Image_Load(LoadMultiViewImageFromFiles):
+    def transform(self, result: dict) -> Optional[dict]:
+        calib_filepath = result['calib_path']
+        filedata = utils.read_calib_file(calib_filepath)
+        P_rect_20 = np.reshape(filedata['P2'], (3, 4))
+        T2 = np.eye(4)
+        T2[0, 3] = P_rect_20[0, 3] / P_rect_20[0, 0]
+        T_cam0_velo = np.reshape(filedata['Tr'], (3, 4))
+        T_cam0_velo = np.vstack([T_cam0_velo, [0, 0, 0, 1]])
+        T_cam2_velo = T2.dot(T_cam0_velo)
+        K_P2 = np.eye(4)
+        K_P2[:3,:3] = P_rect_20[:3,:3]
+        lidar2img = K_P2.dot(T_cam2_velo)
+        result['lidar2img'] = np.stack([lidar2img], axis=0)
+        
+        img_byte = get(result['img_path'], backend_args=self.backend_args) 
+        img = mmcv.imfrombytes(img_byte, flag=self.color_type)
+        result['img'] = [img]
+        
+        return result
+
+@TRANSFORMS.register_module()
+class LoadSemanticKITTI_Occupancy(BaseTransform):
+    def get_remap_lut(self, label_map):
+        maxkey = max(label_map.keys())
+
+        # +100 hack making lut bigger just in case there are unknown labels
+        remap_lut = np.zeros((maxkey + 100), dtype=np.int32)
+        remap_lut[list(label_map.keys())] = list(label_map.values())
+
+        # in completion we have to distinguish empty and invalid voxels.
+        # Important: For voxels 0 corresponds to "empty" and not "unlabeled".
+        remap_lut[remap_lut == 0] = 255  # map 0 to 'invalid'
+        remap_lut[0] = 0  # only 'empty' stays 'empty'.
+
+        return remap_lut
+        
+    
+    def unpack(self, compressed):
+        ''' given a bit encoded voxel grid, make a normal voxel grid out of it.  '''
+        uncompressed = np.zeros(compressed.shape[0] * 8, dtype=np.uint8)
+        uncompressed[::8] = compressed[:] >> 7 & 1
+        uncompressed[1::8] = compressed[:] >> 6 & 1
+        uncompressed[2::8] = compressed[:] >> 5 & 1
+        uncompressed[3::8] = compressed[:] >> 4 & 1
+        uncompressed[4::8] = compressed[:] >> 3 & 1
+        uncompressed[5::8] = compressed[:] >> 2 & 1
+        uncompressed[6::8] = compressed[:] >> 1 & 1
+        uncompressed[7::8] = compressed[:] & 1
+
+        return uncompressed
+    
+    def transform(self, result: dict) -> dict:
+        gt = np.fromfile(result['voxel_gt_path'],dtype=np.uint16).astype(np.float32)
+        invalid = np.fromfile(result['voxel_invalid_path'], dtype=np.uint8)
+        invalid = self.unpack(invalid)
+        remap_lut = self.get_remap_lut(result['label_mapping'])
+        gt = remap_lut[gt.astype(np.uint16)].astype(np.float32)  # Remap 20 classes semanticKITTI SSC
+        # gt_ori = copy.deepcopy(gt)
+        # gt_ori = gt_ori.reshape([256, 256, 32])
+        # gt_ori = torch.from_numpy(gt_ori)
+        # # gt_ori[gt_ori!=0] = 1  # For scene compeletion task
+        # idx = torch.where(gt_ori > 0)
+        # label = gt_ori[idx[0],idx[1],idx[2]]
+        # semantickitti_occ = torch.stack([idx[0],idx[1],idx[2],label],dim=1).long()
+        
+        gt[np.isclose(invalid, 1)] = 255  # Setting to unknown all voxels marked on invalid mask...
+        gt_masked = gt.reshape([256, 256, 32])
+        gt_masked = torch.from_numpy(gt_masked)
+        gt_masked[(gt_masked!=0) & (gt_masked!=255)] = 1   # For scene compeletion task
+        idx_masked = torch.where(gt_masked > 0)
+        label_masked = gt_masked[idx_masked[0],idx_masked[1],idx_masked[2]]
+        semantickitti_occ_masked = torch.stack([idx_masked[0],idx_masked[1],idx_masked[2],label_masked],dim=1).long()
+        
+        # result['occ_semantickitti'] = semantickitti_occ
+        result['occ_semantickitti_masked'] = semantickitti_occ_masked
+        return result
+        
+    def __repr__(self) -> str:
+        """str: Return a string that describes the module."""
+        repr_str = self.__class__.__name__
+        return repr_str
+
+
+@TRANSFORMS.register_module()
+class LoadSemanticKITTI_Lidar(BaseTransform):
+    def __init__(self,
+                pc_range=None):
+       self.pc_range = pc_range
+    
+    def transform(self, result: dict) -> dict:
+        lidar_path = result['voxel_gt_path'].split('voxels')[0] + 'velodyne' + result['voxel_gt_path'].split('voxels')[1].split('.label')[0] + '.bin'
+        pts = utils.load_velo_scan(lidar_path)
+        pts = torch.from_numpy(pts)
+        idx = torch.where((pts[:,0] > self.pc_range[0])
+                        & (pts[:,1] > self.pc_range[1])
+                        & (pts[:,2] > self.pc_range[2])
+                        & (pts[:,0] < self.pc_range[3])
+                        & (pts[:,1] < self.pc_range[4])
+                        & (pts[:,2] < self.pc_range[5]))
+        pts = pts[idx]
+        result['points'] = pts
+        
+        return result
+        
+    def __repr__(self) -> str:
+        """str: Return a string that describes the module."""
+        repr_str = self.__class__.__name__
+        return repr_str
 
 @TRANSFORMS.register_module()
 class BEVLoadMultiViewImageFromFiles(LoadMultiViewImageFromFiles):
@@ -209,9 +320,9 @@ class LoadOccupancy(BaseTransform):
             occ_3d = np.load(occ_3d_path)
             occ_3d_semantic = occ_3d['semantics']
             occ_3d_cam_mask = occ_3d['mask_camera']
-            occ_3d_semantic[occ_3d_semantic==0]=18 # Direct changed occ_3d_semantic contained
+            occ_3d_semantic[occ_3d_semantic==0]=18 # now class 1~18, with 18:others
             occ_3d_gt_masked = occ_3d_semantic * occ_3d_cam_mask
-            occ_3d_gt_masked[occ_3d_gt_masked==0]=255
+            occ_3d_gt_masked[occ_3d_gt_masked==0]=255 # invisible voxels
             occ_3d_gt_masked[occ_3d_gt_masked==17]=0
             occ_3d_gt_masked[occ_3d_gt_masked==18]=17
             
@@ -236,6 +347,7 @@ class LoadOccupancy(BaseTransform):
             occ_200_path = os.path.join(occ_200_folder, occ_file_name)
             occ_200 = np.load(occ_200_path)
             occ_200[:,3][occ_200[:,3]==0]=255
+            # occ_200[:,3] = 1 # for IoU Task
             occ_200 = torch.from_numpy(occ_200)
             results['occ_200'] = occ_200
             

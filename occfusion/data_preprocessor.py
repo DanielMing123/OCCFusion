@@ -54,7 +54,10 @@ class OccFusionDataPreprocessor(Det3DDataPreprocessor):
                 batch_lidar_voxel_coord.append(lidar_voxel_coords.long())
                 lidar_voxel_features = []
                 for i in range(len(lidar_voxel_coords)):
-                    voxel=torch.zeros((35,8))
+                    if point.shape[-1] == 5:
+                        voxel=torch.zeros((35,8))
+                    else:
+                        voxel=torch.zeros((35,7))
                     pts = point[inv_ind == i]
                     if voxel_counts[i] > 35:
                         pts = pts[:35, :]
@@ -102,6 +105,12 @@ class OccFusionDataPreprocessor(Det3DDataPreprocessor):
             
         if 'occ_3d_masked' in data['inputs']:
             batch_inputs['occ_3d_masked'] = data['inputs']['occ_3d_masked']
+        
+        if 'occ_semantickitti' in data['inputs']:
+            batch_inputs['occ_semantickitti'] = data['inputs']['occ_semantickitti']
+        
+        if 'occ_semantickitti_masked' in data['inputs']:
+            batch_inputs['occ_semantickitti_masked'] = data['inputs']['occ_semantickitti_masked']
         
         if 'imgs' in inputs:
             imgs = inputs['imgs']

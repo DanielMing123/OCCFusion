@@ -31,9 +31,12 @@ class OccHead(BaseModule):
             for mlp_occ,xyz_volume in zip(self.mlp_occs, xyz_volumes):
                 logit = mlp_occ(xyz_volume.permute(0,2,3,4,1))
                 logits.append(logit)
+            # logits = self.mlp_occs[0](xyz_volumes.permute(0,2,3,4,1))
             return logits
         else:
             logits_lvl0 = self.mlp_occs[0](xyz_volumes[0].permute(0,2,3,4,1))
             return logits_lvl0
+            # logits = self.mlp_occs[0](xyz_volumes.permute(0,2,3,4,1))
+            # return logits
                 
         

@@ -211,7 +211,8 @@ class MultiScaleInverseMatrixVT(BaseModule):
             xyz_volumes.append(xyz_volume)
 
         return xyz_volumes[::-1]
-    
+        # res = self.refines[0](self.up_samples[0](merged_xyz_feats[0]))
+        # return res
     
 class SingleScaleInverseMatrixVT(BaseModule):
     def __init__(self,
@@ -375,12 +376,12 @@ class SingleScaleInverseMatrixVT(BaseModule):
         
         idx_xyz = torch.stack([ref_points_xyz[valid_idx_xyz[:, 0],valid_idx_xyz[:, 1]],valid_idx_xyz[:, 0]],dim=0).unique(dim=1)
         v_xyz = torch.ones(idx_xyz.shape[1]).to(img_feat.device)
-        vt_xyz = torch.sparse.FloatTensor(indices=idx_xyz, values=v_xyz, size=[Nc * H * W, X * Y * Z])
+        vt_xyz = torch.sparse_coo_tensor(indices=idx_xyz, values=v_xyz, size=[Nc * H * W, X * Y * Z])
         div_xyz = vt_xyz.sum(0).to_dense().clip(min=1)
         
         idx_xy = torch.stack([ref_points_z[valid_idx_z[:, 0],valid_idx_z[:, 1]],valid_idx_z[:, 0]],dim=0).unique(dim=1)
         v_xy = torch.ones(idx_xy.shape[1]).to(img_feat.device)
-        vt_xy = torch.sparse.FloatTensor(indices=idx_xy, values=v_xy, size=[Nc * H * W, X * Y])
+        vt_xy = torch.sparse_coo_tensor(indices=idx_xy, values=v_xy, size=[Nc * H * W, X * Y])
         div_xy = vt_xy.sum(0).to_dense().clip(min=1)
         
         return vt_xyz, vt_xy, div_xyz, div_xy, valid_cams_idx
