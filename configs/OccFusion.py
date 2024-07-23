@@ -167,7 +167,7 @@ val_pipeline = [
         backend_args=backend_args),
     dict(
         type='LoadPointsFromMultiSweeps',
-        sweeps_num=10,
+        sweeps_num=10, # 9
         load_dim=5,
         use_dim=5,
         pad_empty_sweeps=True,
@@ -194,7 +194,7 @@ test_pipeline = val_pipeline
 
 
 train_dataloader = dict(
-    batch_size=3, # 4
+    batch_size=4, # 4
     num_workers=4,
     persistent_workers=True,
     drop_last=True,
@@ -224,7 +224,7 @@ val_dataloader = dict(
 test_dataloader = val_dataloader
 
 
-val_evaluator = dict(type='SegMetric')
+val_evaluator = dict(type='EvalMetric')
 
 test_evaluator = val_evaluator
 

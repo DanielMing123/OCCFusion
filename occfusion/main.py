@@ -166,16 +166,16 @@ class OccFusion(Base3DSegmentor):
         occ_ori_logits = self._forward(batch_inputs,batch_data_samples)
         B,X,Y,Z,Cls = occ_ori_logits.shape
         # occ_ori_logits = occ_ori_logits[:,39:159,39:159,:,:] # 30m
-        occ_predict = occ_ori_logits.softmax(dim=-1)
-        occ_predict = torch.argmax(occ_predict, dim=-1)
-        occ_predict = occ_predict.squeeze(0).cpu().numpy()
+        # occ_predict = occ_ori_logits.softmax(dim=-1)
+        # occ_predict = torch.argmax(occ_predict, dim=-1)
+        # occ_predict = occ_predict.squeeze(0).cpu().numpy()
         
-        save_folder = './predict'
-        if not os.path.exists(save_folder):
-            os.mkdir(save_folder)
-        num = len(os.listdir(save_folder))
-        save_path = os.path.join(save_folder,f'{num}.npy')
-        np.save(save_path, occ_predict)
+        # save_folder = './predict'
+        # if not os.path.exists(save_folder):
+        #     os.mkdir(save_folder)
+        # num = len(os.listdir(save_folder))
+        # save_path = os.path.join(save_folder,f'{num}.npy')
+        # np.save(save_path, occ_predict)
         
         if X==256:
             voxels_lvl0 = self.multiscale_supervision(batch_inputs['occ_semantickitti_masked'],[1,1,1],np.array([len(batch_data_samples),256,256,32],dtype=np.int32))

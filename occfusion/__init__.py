@@ -8,7 +8,8 @@ from .custom_pack import Custom3DPack
 from .multi_scale_inverse_matrixVT import MultiScaleInverseMatrixVT
 from .bottleneckaspp import BottleNeckASPP
 from .svfe import SVFE
+from .evaluate import EvalMetric
 
-__all__ = ['OccFusion','OccHead','BEVLoadMultiViewImageFromFiles','SVFE','LoadRadarPointsMultiSweeps',
+__all__ = ['OccFusion','OccHead','BEVLoadMultiViewImageFromFiles','SVFE','LoadRadarPointsMultiSweeps','EvalMetric'
            'SegLabelMapping','OccFusionDataPreprocessor','NuScenesSegDataset','SemanticKITTI_Image_Load',
            'Custom3DPack','MultiScaleInverseMatrixVT','BottleNeckASPP','SemanticKittiSegDataset','LoadSemanticKITTI_Lidar']
