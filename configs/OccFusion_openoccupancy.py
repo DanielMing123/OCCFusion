@@ -1,7 +1,9 @@
 _base_ = ['_base_/default_runtime.py']
 custom_imports = dict(imports=['occfusion'], allow_failed_imports=False)
 
-load_from = 'ckpt/OccFusion_Cam_Lidar_Radar_Atten_ckpt_new_eval/epoch_3.pth'
+load_from = 'ckpt/OccFusion_Cam_Lidar_Atten_ckpt_new_eval/epoch_4.pth'
+# load_from = 'ckpt/r101_dcn_fcos3d_pretrain.pth'
+# load_from = 'ckpt/resnet50-0676ba61.pth'
 
 dataset_type = 'NuScenesSegDataset'
 data_root = 'data/nuscenes'
@@ -18,18 +20,19 @@ data_prefix = dict(
 input_modality = dict(use_lidar=True, use_camera=True)
 backend_args = None
 
-point_cloud_range = [-50.0, -50.0, -5.0, 50.0, 50.0, 3.0]
-grid_size_vt = [100, 100, 8]
+point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
+grid_size_vt = [128, 128, 10]
 num_points_per_voxel = 35
 nbr_class = 17
 use_lidar=True
-use_radar=True
+use_radar=False
 use_occ3d=False
-find_unused_parameters=False
+find_unused_parameters=True
 
 model = dict(
     type='OccFusion',
     use_occ3d=use_occ3d,
+    use_openoccupancy=True,
     use_lidar=use_lidar,
     use_radar=use_radar,
     data_preprocessor=dict(
@@ -65,15 +68,14 @@ model = dict(
         relu_before_extra_convs=True),
     view_transformer=dict(
         type='MultiScaleInverseMatrixVT',
-        feature_strides=[8, 16, 32],
-        in_channel=[32,64,128,256],
-        grid_size=[[100, 100, 8],
-                   [50, 50, 4],
-                   [25, 25, 2]],
-        x_bound=[-50, 50],
-        y_bound=[-50, 50],
+        feature_strides=[8, 16],
+        in_channel=[32,64,128],
+        grid_size=[[128, 128, 10],
+                   [64, 64, 5]],
+        x_bound=[-51.2, 51.2],
+        y_bound=[-51.2, 51.2],
         z_bound=[-5., 3.],
-        sampling_rate=[4,5,6],
+        sampling_rate=[3, 4],
         num_cams=[None,None,None],
         enable_fix=False,
         use_lidar=use_lidar,
@@ -93,7 +95,7 @@ model = dict(
         ),
     occ_head=dict(
         type='OccHead',
-        channels=[32,64,128,256],
+        channels=[32,64,128],
         num_classes=nbr_class
         )
 )
@@ -120,14 +122,15 @@ train_pipeline = [
         backend_args=backend_args),
     dict(
         type='LoadPointsFromMultiSweeps',
-        sweeps_num=10, # 9
+        sweeps_num=9, # 9
         load_dim=5,
         use_dim=5,
         pad_empty_sweeps=True,
         remove_close=True,
         backend_args=backend_args),
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='LoadOccupancy'),
+    dict(type='LoadOccupancy',
+         use_openoccupancy=True),
     dict(
         type='LoadAnnotations3D',
         with_bbox_3d=False,
@@ -141,7 +144,7 @@ train_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points','pts_semantic_mask','radars','occ_200'], 
+        keys=['img', 'points','pts_semantic_mask','radars','occ_open'], 
         meta_keys=['lidar2img'])
 ]
 
@@ -167,14 +170,15 @@ val_pipeline = [
         backend_args=backend_args),
     dict(
         type='LoadPointsFromMultiSweeps',
-        sweeps_num=10,
+        sweeps_num=9,
         load_dim=5,
         use_dim=5,
         pad_empty_sweeps=True,
         remove_close=True,
         backend_args=backend_args),
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
-    dict(type='LoadOccupancy'),
+    dict(type='LoadOccupancy',
+         use_openoccupancy=True),
     dict(
         type='LoadAnnotations3D',
         with_bbox_3d=False,
@@ -185,7 +189,7 @@ val_pipeline = [
     dict(type='SegLabelMapping'),
     dict(
         type='Custom3DPack',
-        keys=['img', 'points','pts_semantic_mask','radars','occ_200'], 
+        keys=['img', 'points','pts_semantic_mask','radars','occ_open'], 
         meta_keys=['lidar2img'])
 ]
 
@@ -208,8 +212,8 @@ train_dataloader = dict(
         test_mode=False))
 
 val_dataloader = dict(
-    batch_size=8,
-    num_workers=4,
+    batch_size=16, # 4
+    num_workers=4, # 4
     persistent_workers=True,
     drop_last=False,
     sampler=dict(type='DefaultSampler', shuffle=False),
@@ -223,8 +227,7 @@ val_dataloader = dict(
 
 test_dataloader = val_dataloader
 
-
-val_evaluator = dict(type='SegMetric')
+val_evaluator = dict(type='EvalMetric')
 
 test_evaluator = val_evaluator
 
@@ -234,7 +237,7 @@ visualizer = dict(
 
 optim_wrapper = dict(
     type='OptimWrapper',
-    optimizer=dict(type='AdamW', lr=5e-5, weight_decay=0.01), # 5e-5 2e-4
+    optimizer=dict(type='AdamW', lr=5e-6, weight_decay=0.01), # 2e-6,5e-5 for fine-tuning 2e-4 for training from scratch
     paramwise_cfg=dict(custom_keys={
         'backbone': dict(lr_mult=0.1),
     }),

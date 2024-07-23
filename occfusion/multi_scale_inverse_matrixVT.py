@@ -267,6 +267,28 @@ class SingleScaleInverseMatrixVT(BaseModule):
         elif use_lidar or use_radar:
             self.xyz_fusion = DynamicFusion3D(in_channel*2, in_channel)
             self.xy_fusion = DynamicFusion2D(in_channel*2, in_channel)
+        if use_lidar or use_radar:
+            self.lidar_atten_3D = nn.Sequential(nn.Conv3d(in_channel,in_channel//2,kernel_size=7,padding=3),
+                                        nn.BatchNorm3d(in_channel//2),
+                                        nn.ReLU(),
+                                        nn.Conv3d(in_channel//2,1,kernel_size=7,padding=3),
+                                        nn.Sigmoid())
+            self.cam_atten_3D = nn.Sequential(nn.Conv3d(in_channel,in_channel//2,kernel_size=7,padding=3),
+                                        nn.BatchNorm3d(in_channel//2),
+                                        nn.ReLU(),
+                                        nn.Conv3d(in_channel//2,1,kernel_size=7,padding=3),
+                                        nn.Sigmoid())
+            self.lidar_atten_2D = nn.Sequential(nn.Conv2d(in_channel,in_channel//2,kernel_size=7,padding=3),
+                                        nn.BatchNorm2d(in_channel//2),
+                                        nn.ReLU(),
+                                        nn.Conv2d(in_channel//2,1,kernel_size=7,padding=3),
+                                        nn.Sigmoid())
+            self.cam_atten_2D = nn.Sequential(nn.Conv2d(in_channel,in_channel//2,kernel_size=7,padding=3),
+                                        nn.BatchNorm2d(in_channel//2),
+                                        nn.ReLU(),
+                                        nn.Conv2d(in_channel//2,1,kernel_size=7,padding=3),
+                                        nn.Sigmoid())
+             
         if in_index == 0: 
             self.bev_attn_layer = EfficientViTBlock(type='s',
                                                 ed=in_channel,
@@ -482,6 +504,16 @@ class SingleScaleInverseMatrixVT(BaseModule):
         cam_xyz_feats = self.down_conv3d(cam_xyz_feats)
         cam_xy_feats = self.xy_conv(cam_xy_feats)
         
+        cam_atten_3d = self.cam_atten_3D(cam_xyz_feats)
+        cam_atten_2d = self.cam_atten_2D(cam_xy_feats)
+        lidar_atten_3d = self.lidar_atten_3D(lidar_xyz_feat)
+        lidar_atten_2d = self.lidar_atten_2D(lidar_xy_feat)
+        
+        cam_xyz_feats = lidar_atten_3d * cam_xyz_feats
+        cam_xy_feats = lidar_atten_2d * cam_xy_feats
+        lidar_xyz_feat = cam_atten_3d * lidar_xyz_feat
+        lidar_xy_feat = cam_atten_2d * lidar_xy_feat
+        
         merged_xyz_feat = torch.cat([cam_xyz_feats,lidar_xyz_feat],dim=1)
         merged_xyz_feat = self.xyz_fusion(merged_xyz_feat)
         
@@ -543,6 +575,16 @@ class SingleScaleInverseMatrixVT(BaseModule):
         cam_xy_feats = torch.stack(cam_xy_feats)
         cam_xyz_feats = self.down_conv3d(cam_xyz_feats)
         cam_xy_feats = self.xy_conv(cam_xy_feats)
+        
+        cam_atten_3d = self.cam_atten_3D(cam_xyz_feats)
+        cam_atten_2d = self.cam_atten_2D(cam_xy_feats)
+        lidar_atten_3d = self.lidar_atten_3D(lidar_xyz_feat)
+        lidar_atten_2d = self.lidar_atten_2D(lidar_xy_feat)
+        
+        cam_xyz_feats = lidar_atten_3d * cam_xyz_feats
+        cam_xy_feats = lidar_atten_2d * cam_xy_feats
+        lidar_xyz_feat = cam_atten_3d * lidar_xyz_feat
+        lidar_xy_feat = cam_atten_2d * lidar_xy_feat
         
         merged_xyz_feat = torch.cat([cam_xyz_feats,lidar_xyz_feat,radar_xyz_feat],dim=1)
         merged_xyz_feat = self.xyz_fusion(merged_xyz_feat)

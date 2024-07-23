@@ -142,22 +142,22 @@ class OccFusion(Base3DSegmentor):
         vox_lovasz_lvl3 = vox_logits_lvl3.reshape(-1,Cls)
         vox_lovasz_label_lvl3 = voxels_lvl3.reshape(-1)
         
-        loss = dict(level0_loss = self.loss_fl(vox_fl_predict_lvl0,vox_fl_label_lvl0) + \
-                                    geo_scal_loss(vox_sem_predict_lvl0,voxels_lvl0) + \
-                                    sem_scal_loss(vox_sem_predict_lvl0,voxels_lvl0) + \
-                                    self.loss_lovasz(vox_lovasz_lvl0,vox_lovasz_label_lvl0),
-                    level1_loss = 0.5 * (self.loss_fl(vox_fl_predict_lvl1,vox_fl_label_lvl1) + \
-                                        geo_scal_loss(vox_sem_predict_lvl1,voxels_lvl1) + \
-                                        sem_scal_loss(vox_sem_predict_lvl1,voxels_lvl1) + \
-                                        self.loss_lovasz(vox_lovasz_lvl1,vox_lovasz_label_lvl1)),
-                    level2_loss = 0.25 * (self.loss_fl(vox_fl_predict_lvl2,vox_fl_label_lvl2) + \
-                                        geo_scal_loss(vox_sem_predict_lvl2,voxels_lvl2) + \
-                                        sem_scal_loss(vox_sem_predict_lvl2,voxels_lvl2) + \
-                                        self.loss_lovasz(vox_lovasz_lvl2,vox_lovasz_label_lvl2)),
-                    level3_loss = 0.125 * (self.loss_fl(vox_fl_predict_lvl3,vox_fl_label_lvl3) + \
-                                        geo_scal_loss(vox_sem_predict_lvl3,voxels_lvl3) + \
-                                        sem_scal_loss(vox_sem_predict_lvl3,voxels_lvl3) + \
-                                        self.loss_lovasz(vox_lovasz_lvl3,vox_lovasz_label_lvl3))
+        loss = dict(level0_loss = torch.nan_to_num(self.loss_fl(vox_fl_predict_lvl0,vox_fl_label_lvl0)) + \
+                                  torch.nan_to_num(geo_scal_loss(vox_sem_predict_lvl0,voxels_lvl0)) + \
+                                  torch.nan_to_num(sem_scal_loss(vox_sem_predict_lvl0,voxels_lvl0)) + \
+                                  torch.nan_to_num(self.loss_lovasz(vox_lovasz_lvl0,vox_lovasz_label_lvl0)),
+                    level1_loss = 0.5 * (torch.nan_to_num(self.loss_fl(vox_fl_predict_lvl1,vox_fl_label_lvl1)) + \
+                                        torch.nan_to_num(geo_scal_loss(vox_sem_predict_lvl1,voxels_lvl1)) + \
+                                        torch.nan_to_num(sem_scal_loss(vox_sem_predict_lvl1,voxels_lvl1)) + \
+                                        torch.nan_to_num(self.loss_lovasz(vox_lovasz_lvl1,vox_lovasz_label_lvl1))),
+                    level2_loss = 0.25 * (torch.nan_to_num(self.loss_fl(vox_fl_predict_lvl2,vox_fl_label_lvl2)) + \
+                                          torch.nan_to_num(geo_scal_loss(vox_sem_predict_lvl2,voxels_lvl2)) + \
+                                          torch.nan_to_num(sem_scal_loss(vox_sem_predict_lvl2,voxels_lvl2)) + \
+                                          torch.nan_to_num(self.loss_lovasz(vox_lovasz_lvl2,vox_lovasz_label_lvl2))),
+                    level3_loss = 0.125 * (torch.nan_to_num(self.loss_fl(vox_fl_predict_lvl3,vox_fl_label_lvl3)) + \
+                                           torch.nan_to_num(geo_scal_loss(vox_sem_predict_lvl3,voxels_lvl3)) + \
+                                           torch.nan_to_num(sem_scal_loss(vox_sem_predict_lvl3,voxels_lvl3)) + \
+                                           torch.nan_to_num(self.loss_lovasz(vox_lovasz_lvl3,vox_lovasz_label_lvl3)))
                     )
         return loss
     
