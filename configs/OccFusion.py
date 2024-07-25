@@ -1,7 +1,7 @@
 _base_ = ['_base_/default_runtime.py']
 custom_imports = dict(imports=['occfusion'], allow_failed_imports=False)
 
-load_from = 'ckpt/OccFusion_Cam_Lidar_Radar_Atten_ckpt_new_eval/epoch_3.pth'
+load_from = 'ckpt/OccFusion_Cam_Lidar_Atten_ckpt_new_eval/epoch_4.pth'
 
 dataset_type = 'NuScenesSegDataset'
 data_root = 'data/nuscenes'
@@ -23,7 +23,7 @@ grid_size_vt = [100, 100, 8]
 num_points_per_voxel = 35
 nbr_class = 17
 use_lidar=True
-use_radar=True
+use_radar=False
 use_occ3d=False
 find_unused_parameters=False
 

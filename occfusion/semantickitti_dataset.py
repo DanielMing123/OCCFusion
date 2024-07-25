@@ -25,7 +25,7 @@ class SemanticKittiSegDataset(BaseDataset):
     """
     METAINFO = {
         'classes':
-        ('empty', 'car', 'bicycle','motorcycle','truck','other-vehicle','person','bicyclist','motorcyclist','road',
+        ('IoU', 'car', 'bicycle','motorcycle','truck','other-vehicle','person','bicyclist','motorcyclist','road',
          'parking','sidewalk','other-ground','building','fence','vegetation','trunk','terrain','pole','traffic-sign'),
         'ignore_index':
             255,

@@ -1,8 +1,7 @@
 _base_ = ['_base_/default_runtime.py']
 custom_imports = dict(imports=['occfusion'], allow_failed_imports=False)
 
-load_from = 'ckpt/r101_dcn_fcos3d_pretrain.pth'
-# load_from = 'ckpt/resnet50-0676ba61.pth'
+load_from = 'ckpt/OccFusion_Cam_Lidar_semanticKITTI_ckpt_new_eval/epoch_15.pth'
 
 dataset_type = 'SemanticKittiSegDataset'
 data_root = 'data/semantickitti'
@@ -13,7 +12,7 @@ backend_args = None
 point_cloud_range = [0, -25.6, -2.0, 51.2, 25.6, 4.4]
 grid_size_vt = [128, 128, 16]
 num_points_per_voxel = 35
-nbr_class = 2 # 20
+nbr_class = 20 # 20
 use_lidar=True
 use_radar=False 
 use_occ3d=False
@@ -159,7 +158,7 @@ val_dataloader = dict(
 test_dataloader = val_dataloader
 
 
-val_evaluator = dict(type='SegMetric')
+val_evaluator = dict(type='EvalMetric')
 
 test_evaluator = val_evaluator
 

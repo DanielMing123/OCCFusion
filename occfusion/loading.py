@@ -72,18 +72,10 @@ class LoadSemanticKITTI_Occupancy(BaseTransform):
         invalid = self.unpack(invalid)
         remap_lut = self.get_remap_lut(result['label_mapping'])
         gt = remap_lut[gt.astype(np.uint16)].astype(np.float32)  # Remap 20 classes semanticKITTI SSC
-        # gt_ori = copy.deepcopy(gt)
-        # gt_ori = gt_ori.reshape([256, 256, 32])
-        # gt_ori = torch.from_numpy(gt_ori)
-        # # gt_ori[gt_ori!=0] = 1  # For scene compeletion task
-        # idx = torch.where(gt_ori > 0)
-        # label = gt_ori[idx[0],idx[1],idx[2]]
-        # semantickitti_occ = torch.stack([idx[0],idx[1],idx[2],label],dim=1).long()
         
         gt[np.isclose(invalid, 1)] = 255  # Setting to unknown all voxels marked on invalid mask...
         gt_masked = gt.reshape([256, 256, 32])
         gt_masked = torch.from_numpy(gt_masked)
-        gt_masked[(gt_masked!=0) & (gt_masked!=255)] = 1   # For scene compeletion task
         idx_masked = torch.where(gt_masked > 0)
         label_masked = gt_masked[idx_masked[0],idx_masked[1],idx_masked[2]]
         semantickitti_occ_masked = torch.stack([idx_masked[0],idx_masked[1],idx_masked[2],label_masked],dim=1).long()
