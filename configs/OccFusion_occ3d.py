@@ -228,7 +228,7 @@ val_dataloader = dict(
 
 test_dataloader = val_dataloader
 
-val_evaluator = dict(type='SegMetric')
+val_evaluator = dict(type='EvalMetric')
 
 test_evaluator = val_evaluator
 

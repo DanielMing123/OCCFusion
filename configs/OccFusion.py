@@ -208,7 +208,7 @@ train_dataloader = dict(
         test_mode=False))
 
 val_dataloader = dict(
-    batch_size=8,
+    batch_size=4, # 8
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
@@ -217,7 +217,7 @@ val_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_prefix=data_prefix,
-        ann_file='nuscenes_infos_occfusion_val.pkl',
+        ann_file='nuscenes_infos_occfusion_val_night.pkl',
         pipeline=val_pipeline,
         test_mode=True)) # True
 
@@ -234,7 +234,7 @@ visualizer = dict(
 
 optim_wrapper = dict(
     type='OptimWrapper',
-    optimizer=dict(type='AdamW', lr=5e-5, weight_decay=0.01), # 5e-5 2e-4
+    optimizer=dict(type='AdamW', lr=5e-5, weight_decay=0.01), # 5e-5 for ablation study, 2e-4 for initial training
     paramwise_cfg=dict(custom_keys={
         'backbone': dict(lr_mult=0.1),
     }),

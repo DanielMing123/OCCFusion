@@ -25,7 +25,7 @@ class NuScenesSegDataset(BaseDataset):
     """
     METAINFO = {
         'classes':
-        ('empty', 'barrier', 'bicycle', 'bus', 'car', 'construction_vehicle',
+        ('IoU', 'barrier', 'bicycle', 'bus', 'car', 'construction_vehicle',
          'motorcycle', 'pedestrian', 'traffic_cone', 'trailer', 'truck',
          'driveable_surface', 'other_flat', 'sidewalk', 'terrain', 'manmade',
          'vegetation'),
@@ -70,7 +70,7 @@ class NuScenesSegDataset(BaseDataset):
         if self.use_occ3d:
             self.METAINFO = {
                 'classes':
-                    ('empty', 'barrier', 'bicycle', 'bus', 'car', 'construction_vehicle',
+                    ('IoU', 'barrier', 'bicycle', 'bus', 'car', 'construction_vehicle',
                     'motorcycle', 'pedestrian', 'traffic_cone', 'trailer', 'truck',
                     'driveable_surface', 'other_flat', 'sidewalk', 'terrain', 'manmade',
                     'vegetation','others'),
