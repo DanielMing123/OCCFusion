@@ -1,7 +1,7 @@
 _base_ = ['_base_/default_runtime.py']
 custom_imports = dict(imports=['occfusion'], allow_failed_imports=False)
 
-load_from = 'ckpt/OccFusion_Cam_Lidar_Atten_ckpt_new_eval/epoch_4.pth'
+load_from = 'ckpt/r101_dcn_fcos3d_pretrain.pth'
 
 dataset_type = 'NuScenesSegDataset'
 data_root = 'data/nuscenes'
@@ -23,9 +23,9 @@ grid_size_vt = [100, 100, 8]
 num_points_per_voxel = 35
 nbr_class = 17
 use_lidar=True
-use_radar=False
+use_radar=True
 use_occ3d=False
-find_unused_parameters=False
+find_unused_parameters=False # False
 
 model = dict(
     type='OccFusion',
@@ -208,7 +208,7 @@ train_dataloader = dict(
         test_mode=False))
 
 val_dataloader = dict(
-    batch_size=4, # 8
+    batch_size=8, # 8
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
@@ -217,7 +217,7 @@ val_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_prefix=data_prefix,
-        ann_file='nuscenes_infos_occfusion_val_night.pkl',
+        ann_file='nuscenes_infos_occfusion_val.pkl',
         pipeline=val_pipeline,
         test_mode=True)) # True
 
@@ -252,7 +252,7 @@ param_scheduler = [
         convert_to_iter_based=True)
 ]
 
-train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=6,val_begin=1, val_interval=1)
+train_cfg = dict(type='EpochBasedTrainLoop', max_epochs=24,val_begin=1, val_interval=1)
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 

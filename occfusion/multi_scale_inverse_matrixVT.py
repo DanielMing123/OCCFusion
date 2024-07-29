@@ -240,6 +240,8 @@ class SingleScaleInverseMatrixVT(BaseModule):
         if enable_fix:
             self.fix_param = torch.load(f'./fix_param_small/{self.in_index}.pth.tar')
         self.enable_fix = enable_fix
+        self.use_lidar = use_lidar
+        self.use_radar = use_radar
         self.num_cams = num_cams
         self.down_conv3d = nn.Sequential(nn.Conv3d(512,in_channel,1),
                                         nn.BatchNorm3d(in_channel),
@@ -261,13 +263,13 @@ class SingleScaleInverseMatrixVT(BaseModule):
                                     nn.ReLU())
         self.combine_coeff = nn.Conv3d(in_channel, 1, kernel_size=1)
         self.aspp_xy = BottleNeckASPP(in_channel,in_channel,[1, 6, 12, 18])
-        if use_lidar and use_radar:
+        if self.use_lidar and self.use_radar:
             self.xyz_fusion = DynamicFusion3D(in_channel*3, in_channel)
             self.xy_fusion = DynamicFusion2D(in_channel*3, in_channel)
-        elif use_lidar or use_radar:
+        elif self.use_lidar or self.use_radar:
             self.xyz_fusion = DynamicFusion3D(in_channel*2, in_channel)
             self.xy_fusion = DynamicFusion2D(in_channel*2, in_channel)
-        if use_lidar or use_radar:
+        if self.use_lidar:
             self.lidar_atten_3D = nn.Sequential(nn.Conv3d(in_channel,in_channel//2,kernel_size=7,padding=3),
                                         nn.BatchNorm3d(in_channel//2),
                                         nn.ReLU(),
@@ -504,15 +506,16 @@ class SingleScaleInverseMatrixVT(BaseModule):
         cam_xyz_feats = self.down_conv3d(cam_xyz_feats)
         cam_xy_feats = self.xy_conv(cam_xy_feats)
         
-        cam_atten_3d = self.cam_atten_3D(cam_xyz_feats)
-        cam_atten_2d = self.cam_atten_2D(cam_xy_feats)
-        lidar_atten_3d = self.lidar_atten_3D(lidar_xyz_feat)
-        lidar_atten_2d = self.lidar_atten_2D(lidar_xy_feat)
-        
-        cam_xyz_feats = lidar_atten_3d * cam_xyz_feats
-        cam_xy_feats = lidar_atten_2d * cam_xy_feats
-        lidar_xyz_feat = cam_atten_3d * lidar_xyz_feat
-        lidar_xy_feat = cam_atten_2d * lidar_xy_feat
+        if self.use_lidar:
+            cam_atten_3d = self.cam_atten_3D(cam_xyz_feats)
+            cam_atten_2d = self.cam_atten_2D(cam_xy_feats)
+            lidar_atten_3d = self.lidar_atten_3D(lidar_xyz_feat)
+            lidar_atten_2d = self.lidar_atten_2D(lidar_xy_feat)
+            
+            cam_xyz_feats = lidar_atten_3d * cam_xyz_feats
+            cam_xy_feats = lidar_atten_2d * cam_xy_feats
+            lidar_xyz_feat = cam_atten_3d * lidar_xyz_feat
+            lidar_xy_feat = cam_atten_2d * lidar_xy_feat
         
         merged_xyz_feat = torch.cat([cam_xyz_feats,lidar_xyz_feat],dim=1)
         merged_xyz_feat = self.xyz_fusion(merged_xyz_feat)
